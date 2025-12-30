@@ -1,0 +1,208 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+export type UserRole = "admin" | "user";
+export type LogStatus = "pending" | "approved" | "rejected";
+
+export interface Database {
+  public: {
+    Tables: {
+      profiles: {
+        Row: {
+          id: string;
+          email: string;
+          name: string;
+          role: UserRole;
+          avatar_url: string | null;
+          total_completed: number;
+          current_streak: number;
+          best_streak: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          name: string;
+          role?: UserRole;
+          avatar_url?: string | null;
+          total_completed?: number;
+          current_streak?: number;
+          best_streak?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          name?: string;
+          role?: UserRole;
+          avatar_url?: string | null;
+          total_completed?: number;
+          current_streak?: number;
+          best_streak?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      invites: {
+        Row: {
+          id: string;
+          email: string;
+          token: string;
+          invited_by: string;
+          used: boolean;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          token: string;
+          invited_by: string;
+          used?: boolean;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          token?: string;
+          invited_by?: string;
+          used?: boolean;
+          expires_at?: string;
+          created_at?: string;
+        };
+      };
+      commitments: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          daily_target: number;
+          unit: string;
+          active_days: number[];
+          punishment_multiplier: number;
+          created_by: string;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          description?: string | null;
+          daily_target: number;
+          unit: string;
+          active_days?: number[];
+          punishment_multiplier?: number;
+          created_by: string;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          description?: string | null;
+          daily_target?: number;
+          unit?: string;
+          active_days?: number[];
+          punishment_multiplier?: number;
+          created_by?: string;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      user_commitments: {
+        Row: {
+          id: string;
+          user_id: string;
+          commitment_id: string;
+          pending_carry_over: number;
+          assigned_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          commitment_id: string;
+          pending_carry_over?: number;
+          assigned_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          commitment_id?: string;
+          pending_carry_over?: number;
+          assigned_at?: string;
+        };
+      };
+      daily_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          commitment_id: string;
+          date: string;
+          target_amount: number;
+          completed_amount: number;
+          carry_over_from_previous: number;
+          status: LogStatus;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          commitment_id: string;
+          date: string;
+          target_amount: number;
+          completed_amount?: number;
+          carry_over_from_previous?: number;
+          status?: LogStatus;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          commitment_id?: string;
+          date?: string;
+          target_amount?: number;
+          completed_amount?: number;
+          carry_over_from_previous?: number;
+          status?: LogStatus;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      user_role: UserRole;
+      log_status: LogStatus;
+    };
+  };
+}
+
+export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type Invite = Database["public"]["Tables"]["invites"]["Row"];
+export type Commitment = Database["public"]["Tables"]["commitments"]["Row"];
+export type UserCommitment = Database["public"]["Tables"]["user_commitments"]["Row"];
+export type DailyLog = Database["public"]["Tables"]["daily_logs"]["Row"];
