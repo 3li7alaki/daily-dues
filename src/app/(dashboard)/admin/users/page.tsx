@@ -6,10 +6,11 @@ export default async function AdminUsersPage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: users }, { data: invites }, { data: commitments }] = await Promise.all([
+  const [{ data: users }, { data: invites }, { data: commitments }, { data: userRealms }] = await Promise.all([
     supabase.from("profiles").select("*").eq("role", "user").order("created_at", { ascending: false }),
     supabase.from("invites").select("*").order("created_at", { ascending: false }),
     supabase.from("commitments").select("*").eq("is_active", true),
+    supabase.from("user_realms").select("*"),
   ]);
 
   return (
@@ -25,6 +26,7 @@ export default async function AdminUsersPage() {
         users={users || []}
         invites={invites || []}
         commitments={commitments || []}
+        userRealms={userRealms || []}
       />
     </div>
   );

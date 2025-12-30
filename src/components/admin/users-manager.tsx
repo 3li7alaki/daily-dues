@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
+import { createInvite } from "@/app/actions/invite";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,15 +43,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { Profile, Invite, Commitment } from "@/types/database";
+import { useRealm } from "@/contexts/realm-context";
+import type { Profile, Invite, Commitment, UserRealm } from "@/types/database";
 
 interface UsersManagerProps {
   users: Profile[];
   invites: Invite[];
   commitments: Commitment[];
+  userRealms: UserRealm[];
 }
 
-export function UsersManager({ users, invites, commitments }: UsersManagerProps) {
+
+export function UsersManager({ users, invites, commitments, userRealms }: UsersManagerProps) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -58,32 +62,35 @@ export function UsersManager({ users, invites, commitments }: UsersManagerProps)
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedCommitments, setSelectedCommitments] = useState<string[]>([]);
   const supabase = createClient();
+  const { currentRealm } = useRealm();
 
-  const generateToken = () => {
-    return crypto.randomUUID();
-  };
+  // Get user IDs in current realm
+  const usersInCurrentRealm = new Set(
+    userRealms
+      .filter((ur) => !currentRealm || ur.realm_id === currentRealm.id)
+      .map((ur) => ur.user_id)
+  );
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!currentRealm) {
+      toast.error("Please select a realm first");
+      return;
+    }
+
     setLoading(true);
 
-    const token = generateToken();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { error } = await supabase.from("invites").insert({
+    const result = await createInvite({
       email: inviteEmail,
-      token,
-      invited_by: user!.id,
-      expires_at: expiresAt.toISOString(),
+      realmId: currentRealm.id,
+      realmName: currentRealm.name,
     });
 
-    if (error) {
-      toast.error("Failed to create invite");
+    if (!result.success) {
+      toast.error(result.error || "Failed to create invite");
     } else {
-      toast.success("Invite created!");
+      toast.success(`Invite sent to ${inviteEmail}!`);
       setInviteEmail("");
       window.location.reload();
     }
@@ -153,7 +160,17 @@ export function UsersManager({ users, invites, commitments }: UsersManagerProps)
     setLoading(false);
   };
 
-  const pendingInvites = invites.filter((i) => !i.used);
+  // Filter by current realm using user_realms
+  const realmUsers = currentRealm
+    ? users.filter((u) => usersInCurrentRealm.has(u.id))
+    : users;
+  const pendingInvites = invites.filter(
+    (i) => !i.used && (!currentRealm || i.realm_id === currentRealm.id)
+  );
+  // Filter commitments by current realm
+  const realmCommitments = currentRealm
+    ? commitments.filter((c) => c.realm_id === currentRealm.id)
+    : commitments;
 
   return (
     <div className="space-y-6">
@@ -253,10 +270,12 @@ export function UsersManager({ users, invites, commitments }: UsersManagerProps)
       <Card>
         <CardHeader>
           <CardTitle>Users</CardTitle>
-          <CardDescription>{users.length} registered users</CardDescription>
+          <CardDescription>
+            {realmUsers.length} registered users{currentRealm ? ` in ${currentRealm.name}` : ""}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
+          {realmUsers.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
               No users yet. Send an invite to get started!
             </p>
@@ -271,7 +290,7 @@ export function UsersManager({ users, invites, commitments }: UsersManagerProps)
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
+                {realmUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -322,12 +341,12 @@ export function UsersManager({ users, invites, commitments }: UsersManagerProps)
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {commitments.length === 0 ? (
+            {realmCommitments.length === 0 ? (
               <p className="text-muted-foreground text-center">
-                No commitments created yet.
+                No commitments in this realm yet.
               </p>
             ) : (
-              commitments.map((commitment) => (
+              realmCommitments.map((commitment) => (
                 <div
                   key={commitment.id}
                   className="flex items-center space-x-3"

@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useRealm } from "@/contexts/realm-context";
 import type { Commitment } from "@/types/database";
 
 interface CommitmentsManagerProps {
@@ -66,9 +67,16 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const supabase = createClient();
+  const { currentRealm } = useRealm();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!currentRealm) {
+      toast.error("Please select a realm first");
+      return;
+    }
+
     setLoading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -92,13 +100,14 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
       // Create new
       const { error } = await supabase.from("commitments").insert({
         ...form,
+        realm_id: currentRealm.id,
         created_by: user!.id,
       });
 
       if (error) {
         toast.error("Failed to create commitment");
       } else {
-        toast.success("Commitment created!");
+        toast.success(`Commitment created in ${currentRealm.name}!`);
       }
     }
 
@@ -158,6 +167,11 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
       setForm({ ...form, active_days: [...form.active_days, day].sort() });
     }
   };
+
+  // Filter by current realm
+  const realmCommitments = currentRealm
+    ? commitments.filter((c) => c.realm_id === currentRealm.id)
+    : commitments;
 
   return (
     <div className="space-y-6">
@@ -290,17 +304,17 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
 
       {/* Commitments List */}
       <div className="grid gap-4 md:grid-cols-2">
-        {commitments.length === 0 ? (
+        {realmCommitments.length === 0 ? (
           <Card className="md:col-span-2">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Dumbbell className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                No commitments created yet. Create one to get started!
+                No commitments{currentRealm ? ` in ${currentRealm.name}` : ""} yet. Create one to get started!
               </p>
             </CardContent>
           </Card>
         ) : (
-          commitments.map((commitment, index) => (
+          realmCommitments.map((commitment, index) => (
             <motion.div
               key={commitment.id}
               initial={{ opacity: 0, y: 20 }}

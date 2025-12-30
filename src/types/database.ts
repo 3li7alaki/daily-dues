@@ -12,6 +12,35 @@ export type LogStatus = "pending" | "approved" | "rejected";
 export interface Database {
   public: {
     Tables: {
+      realms: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          avatar_url: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          avatar_url?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          avatar_url?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       profiles: {
         Row: {
           id: string;
@@ -50,11 +79,32 @@ export interface Database {
           updated_at?: string;
         };
       };
+      user_realms: {
+        Row: {
+          id: string;
+          user_id: string;
+          realm_id: string;
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          realm_id: string;
+          joined_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          realm_id?: string;
+          joined_at?: string;
+        };
+      };
       invites: {
         Row: {
           id: string;
           email: string;
           token: string;
+          realm_id: string;
           invited_by: string;
           used: boolean;
           expires_at: string;
@@ -64,6 +114,7 @@ export interface Database {
           id?: string;
           email: string;
           token: string;
+          realm_id: string;
           invited_by: string;
           used?: boolean;
           expires_at: string;
@@ -73,6 +124,7 @@ export interface Database {
           id?: string;
           email?: string;
           token?: string;
+          realm_id?: string;
           invited_by?: string;
           used?: boolean;
           expires_at?: string;
@@ -82,6 +134,7 @@ export interface Database {
       commitments: {
         Row: {
           id: string;
+          realm_id: string;
           name: string;
           description: string | null;
           daily_target: number;
@@ -95,6 +148,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          realm_id: string;
           name: string;
           description?: string | null;
           daily_target: number;
@@ -108,6 +162,7 @@ export interface Database {
         };
         Update: {
           id?: string;
+          realm_id?: string;
           name?: string;
           description?: string | null;
           daily_target?: number;
@@ -201,7 +256,9 @@ export interface Database {
   };
 }
 
+export type Realm = Database["public"]["Tables"]["realms"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type UserRealm = Database["public"]["Tables"]["user_realms"]["Row"];
 export type Invite = Database["public"]["Tables"]["invites"]["Row"];
 export type Commitment = Database["public"]["Tables"]["commitments"]["Row"];
 export type UserCommitment = Database["public"]["Tables"]["user_commitments"]["Row"];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -34,15 +34,7 @@ export default function RegisterPage() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  useEffect(() => {
-    const token = searchParams.get("token");
-    if (token) {
-      setInviteToken(token);
-      validateInvite(token);
-    }
-  }, [searchParams]);
-
-  const validateInvite = async (token: string) => {
+  const validateInvite = useCallback(async (token: string) => {
     setValidatingInvite(true);
     const { data } = await supabase
       .from("invites")
@@ -57,7 +49,15 @@ export default function RegisterPage() {
       setEmail(data.email);
     }
     setValidatingInvite(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    const token = searchParams.get("token");
+    if (token) {
+      setInviteToken(token);
+      validateInvite(token);
+    }
+  }, [searchParams, validateInvite]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +72,7 @@ export default function RegisterPage() {
     // Validate invite
     const { data: invite, error: inviteError } = await supabase
       .from("invites")
-      .select("id, email")
+      .select("id, email, realm_id")
       .eq("token", inviteToken)
       .eq("used", false)
       .gt("expires_at", new Date().toISOString())
@@ -115,6 +115,18 @@ export default function RegisterPage() {
 
     if (profileError) {
       toast.error("Failed to create profile");
+      setLoading(false);
+      return;
+    }
+
+    // Add user to the invite's realm
+    const { error: realmError } = await supabase.from("user_realms").insert({
+      user_id: authData.user.id,
+      realm_id: invite.realm_id,
+    });
+
+    if (realmError) {
+      toast.error("Failed to join realm");
       setLoading(false);
       return;
     }
