@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { RealmAvatar } from "@/components/realm-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function UserRealmSwitcher() {
@@ -26,14 +26,12 @@ export function UserRealmSwitcher() {
   if (realms.length === 1) {
     return (
       <div className="flex items-center gap-2 text-sm">
-        <Avatar className="h-5 w-5">
-          {currentRealm?.avatar_url && (
-            <AvatarImage src={currentRealm.avatar_url} alt={currentRealm.name} />
-          )}
-          <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-            {currentRealm?.name.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <RealmAvatar
+          name={currentRealm?.name || "R"}
+          avatarUrl={currentRealm?.avatar_url}
+          className="h-5 w-5"
+          fallbackClassName="text-[10px]"
+        />
         <span className="font-medium">{currentRealm?.name}</span>
       </div>
     );
@@ -43,14 +41,12 @@ export function UserRealmSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2 h-8">
-          <Avatar className="h-5 w-5">
-            {currentRealm?.avatar_url && (
-              <AvatarImage src={currentRealm.avatar_url} alt={currentRealm?.name} />
-            )}
-            <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-              {currentRealm?.name.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <RealmAvatar
+            name={currentRealm?.name || "R"}
+            avatarUrl={currentRealm?.avatar_url}
+            className="h-5 w-5"
+            fallbackClassName="text-[10px]"
+          />
           <span className="max-w-[100px] truncate">{currentRealm?.name}</span>
           <ChevronDown className="h-3 w-3" />
         </Button>
@@ -62,14 +58,12 @@ export function UserRealmSwitcher() {
             onClick={() => setCurrentRealm(realm)}
             className="flex items-center gap-2"
           >
-            <Avatar className="h-5 w-5">
-              {realm.avatar_url && (
-                <AvatarImage src={realm.avatar_url} alt={realm.name} />
-              )}
-              <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                {realm.name.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <RealmAvatar
+              name={realm.name}
+              avatarUrl={realm.avatar_url}
+              className="h-5 w-5"
+              fallbackClassName="text-[10px]"
+            />
             <span>{realm.name}</span>
             {realm.id === currentRealm?.id && (
               <span className="ml-auto text-primary">✓</span>

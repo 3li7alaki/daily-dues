@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { RealmAvatar } from "@/components/realm-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function RealmSelector() {
@@ -31,14 +31,12 @@ export function RealmSelector() {
   if (realms.length === 1) {
     return (
       <div className="flex items-center gap-2">
-        <Avatar className="h-6 w-6">
-          {currentRealm?.avatar_url && (
-            <AvatarImage src={currentRealm.avatar_url} alt={currentRealm.name} />
-          )}
-          <AvatarFallback className="text-xs">
-            {currentRealm?.name.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <RealmAvatar
+          name={currentRealm?.name || "R"}
+          avatarUrl={currentRealm?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-xs"
+        />
         <span className="font-medium">{currentRealm?.name}</span>
       </div>
     );
@@ -48,14 +46,12 @@ export function RealmSelector() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" className="gap-2">
-          <Avatar className="h-5 w-5">
-            {currentRealm?.avatar_url && (
-              <AvatarImage src={currentRealm.avatar_url} alt={currentRealm?.name} />
-            )}
-            <AvatarFallback className="text-xs">
-              {currentRealm?.name.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <RealmAvatar
+            name={currentRealm?.name || "R"}
+            avatarUrl={currentRealm?.avatar_url}
+            className="h-5 w-5"
+            fallbackClassName="text-xs"
+          />
           <span>{currentRealm?.name}</span>
           <ChevronDown className="h-4 w-4" />
         </Button>
@@ -67,14 +63,12 @@ export function RealmSelector() {
             onClick={() => setCurrentRealm(realm)}
             className="flex items-center gap-2"
           >
-            <Avatar className="h-5 w-5">
-              {realm.avatar_url && (
-                <AvatarImage src={realm.avatar_url} alt={realm.name} />
-              )}
-              <AvatarFallback className="text-xs">
-                {realm.name.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <RealmAvatar
+              name={realm.name}
+              avatarUrl={realm.avatar_url}
+              className="h-5 w-5"
+              fallbackClassName="text-xs"
+            />
             <span>{realm.name}</span>
             {realm.id === currentRealm?.id && (
               <span className="ml-auto text-primary">✓</span>

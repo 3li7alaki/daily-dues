@@ -11,9 +11,19 @@ import {
   Dumbbell,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { createClient } from "@/lib/supabase/client";
 import { createInvite } from "@/app/actions/invite";
+import {
+  useUsers,
+  useInvites,
+  useCommitments,
+  useUserRealms,
+  useDeleteInvite,
+  useAssignUserCommitments,
+  queryKeys,
+} from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,29 +50,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRealm } from "@/contexts/realm-context";
-import type { Profile, Invite, Commitment, UserRealm } from "@/types/database";
+import type { Profile } from "@/types/database";
 
-interface UsersManagerProps {
-  users: Profile[];
-  invites: Invite[];
-  commitments: Commitment[];
-  userRealms: UserRealm[];
-}
-
-
-export function UsersManager({ users, invites, commitments, userRealms }: UsersManagerProps) {
+export function UsersManager() {
+  const queryClient = useQueryClient();
   const [inviteEmail, setInviteEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [selectedCommitments, setSelectedCommitments] = useState<string[]>([]);
   const supabase = createClient();
   const { currentRealm } = useRealm();
+
+  // React Query
+  const { data: users = [], isLoading: loadingUsers } = useUsers();
+  const { data: invites = [], isLoading: loadingInvites } = useInvites();
+  const { data: commitments = [] } = useCommitments();
+  const { data: userRealms = [] } = useUserRealms();
+
+  const deleteInviteMutation = useDeleteInvite();
+  const assignCommitmentsMutation = useAssignUserCommitments();
 
   // Get user IDs in current realm
   const usersInCurrentRealm = new Set(
@@ -79,7 +90,7 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
       return;
     }
 
-    setLoading(true);
+    setInviteLoading(true);
 
     const result = await createInvite({
       email: inviteEmail,
@@ -90,12 +101,18 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
     if (!result.success) {
       toast.error(result.error || "Failed to create invite");
     } else {
-      toast.success(`Invite sent to ${inviteEmail}!`);
+      if (result.addedDirectly) {
+        toast.success(`${inviteEmail} added to realm!`);
+      } else {
+        toast.success(`Invite sent to ${inviteEmail}!`);
+      }
       setInviteEmail("");
-      window.location.reload();
+      // Invalidate queries to refetch data
+      queryClient.invalidateQueries({ queryKey: queryKeys.invites });
+      queryClient.invalidateQueries({ queryKey: queryKeys.userRealms });
     }
 
-    setLoading(false);
+    setInviteLoading(false);
   };
 
   const copyInviteLink = (token: string) => {
@@ -106,13 +123,12 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  const deleteInvite = async (id: string) => {
-    const { error } = await supabase.from("invites").delete().eq("id", id);
-    if (error) {
-      toast.error("Failed to delete invite");
-    } else {
+  const handleDeleteInvite = async (id: string) => {
+    try {
+      await deleteInviteMutation.mutateAsync(id);
       toast.success("Invite deleted");
-      window.location.reload();
+    } catch {
+      toast.error("Failed to delete invite");
     }
   };
 
@@ -131,33 +147,17 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
 
   const handleAssignCommitments = async () => {
     if (!selectedUser) return;
-    setLoading(true);
 
-    // Delete existing assignments
-    await supabase
-      .from("user_commitments")
-      .delete()
-      .eq("user_id", selectedUser.id);
-
-    // Create new assignments
-    if (selectedCommitments.length > 0) {
-      const { error } = await supabase.from("user_commitments").insert(
-        selectedCommitments.map((commitmentId) => ({
-          user_id: selectedUser.id,
-          commitment_id: commitmentId,
-        }))
-      );
-
-      if (error) {
-        toast.error("Failed to assign commitments");
-        setLoading(false);
-        return;
-      }
+    try {
+      await assignCommitmentsMutation.mutateAsync({
+        userId: selectedUser.id,
+        commitmentIds: selectedCommitments,
+      });
+      toast.success("Commitments updated!");
+      setAssignDialogOpen(false);
+    } catch {
+      toast.error("Failed to assign commitments");
     }
-
-    toast.success("Commitments updated!");
-    setAssignDialogOpen(false);
-    setLoading(false);
   };
 
   // Filter by current realm using user_realms
@@ -169,8 +169,18 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
   );
   // Filter commitments by current realm
   const realmCommitments = currentRealm
-    ? commitments.filter((c) => c.realm_id === currentRealm.id)
-    : commitments;
+    ? commitments.filter((c) => c.realm_id === currentRealm.id && c.is_active)
+    : commitments.filter((c) => c.is_active);
+
+  const isLoading = loadingUsers || loadingInvites;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -200,8 +210,8 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
                 required
               />
             </div>
-            <Button type="submit" disabled={loading}>
-              {loading ? (
+            <Button type="submit" disabled={inviteLoading}>
+              {inviteLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
@@ -252,9 +262,18 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteInvite(invite.id)}
+                          onClick={() => handleDeleteInvite(invite.id)}
+                          disabled={
+                            deleteInviteMutation.isPending &&
+                            deleteInviteMutation.variables === invite.id
+                          }
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          {deleteInviteMutation.isPending &&
+                          deleteInviteMutation.variables === invite.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          )}
                         </Button>
                       </div>
                     </TableCell>
@@ -284,7 +303,6 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
-                  <TableHead>Streak</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -294,11 +312,11 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {user.name.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
+                        <UserAvatar
+                          name={user.name}
+                          avatarUrl={user.avatar_url}
+                          className="h-8 w-8"
+                        />
                         <div>
                           <p className="font-medium">{user.name}</p>
                           <p className="text-xs text-muted-foreground">
@@ -306,9 +324,6 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
                           </p>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{user.current_streak} days</Badge>
                     </TableCell>
                     <TableCell>
                       {new Date(user.created_at).toLocaleDateString()}
@@ -381,8 +396,15 @@ export function UsersManager({ users, invites, commitments, userRealms }: UsersM
             <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAssignCommitments} disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+            <Button
+              onClick={handleAssignCommitments}
+              disabled={assignCommitmentsMutation.isPending}
+            >
+              {assignCommitmentsMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Save"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

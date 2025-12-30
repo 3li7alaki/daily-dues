@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Flame, Target, Medal, Share2, Copy, Check } from "lucide-react";
+import { Trophy, Flame, Target, Medal, Share2, Copy, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -21,10 +21,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Profile } from "@/types/database";
+import type { LeaderboardEntry } from "@/lib/queries";
+import type { Commitment } from "@/types/database";
 
 interface LeaderboardTableProps {
-  profiles: Profile[];
+  entries: LeaderboardEntry[];
+  commitment?: Commitment;
 }
 
 function getRankIcon(rank: number) {
@@ -63,8 +65,10 @@ function getRankTitle(streak: number): string {
   return "Novice";
 }
 
-export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
+export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps) {
   const [copied, setCopied] = useState(false);
+
+  const unit = commitment?.unit || "";
 
   const generateShareText = () => {
     const date = new Date().toLocaleDateString("en-US", {
@@ -74,16 +78,16 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
       day: "numeric",
     });
 
-    let text = `🏆 *Daily Dues Leaderboard*\n`;
+    let text = `🏆 *${commitment?.name || "Commitment"} Leaderboard*\n`;
     text += `📅 ${date}\n\n`;
 
-    profiles.slice(0, 10).forEach((profile, index) => {
+    entries.slice(0, 10).forEach((entry, index) => {
       const rank = index + 1;
       const emoji = getRankEmoji(rank);
-      const title = getRankTitle(profile.current_streak);
-      text += `${emoji} *${profile.name}*\n`;
-      text += `   🔥 ${profile.current_streak} day streak • ${title}\n`;
-      text += `   ✅ ${profile.total_completed} total completed\n\n`;
+      const title = getRankTitle(entry.current_streak);
+      text += `${emoji} *${entry.user.name}*\n`;
+      text += `   🔥 ${entry.current_streak} day streak • ${title}\n`;
+      text += `   ✅ ${entry.total_completed} ${unit} total\n\n`;
     });
 
     text += `\n💪 Keep pushing! Join the grind.`;
@@ -103,14 +107,14 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  if (profiles.length === 0) {
+  if (entries.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12 text-center">
           <Trophy className="h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No users yet</h3>
+          <h3 className="text-lg font-semibold mb-2">No entries yet</h3>
           <p className="text-muted-foreground">
-            Be the first to start your streak!
+            {commitment ? `No one has started ${commitment.name} yet!` : "Select a commitment to see the leaderboard."}
           </p>
         </CardContent>
       </Card>
@@ -118,8 +122,8 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
   }
 
   // Top 3 cards
-  const top3 = profiles.slice(0, 3);
-  const rest = profiles.slice(3);
+  const top3 = entries.slice(0, 3);
+  const rest = entries.slice(3);
 
   return (
     <div className="space-y-6">
@@ -157,8 +161,9 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
 
       {/* Top 3 Podium */}
       <div className="grid gap-4 md:grid-cols-3">
-        {top3.map((profile, index) => {
+        {top3.map((entry, index) => {
           const rank = index + 1;
+          const debt = entry.pending_carry_over || 0;
           const bgColors = [
             "from-yellow-500/20 to-yellow-500/5 border-yellow-500/30",
             "from-gray-400/20 to-gray-400/5 border-gray-400/30",
@@ -167,7 +172,7 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
 
           return (
             <motion.div
-              key={profile.id}
+              key={entry.user.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: index * 0.1 }}
@@ -179,33 +184,40 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
                   <div className="flex justify-center mb-2">
                     {getRankIcon(rank)}
                   </div>
-                  <Avatar className="h-16 w-16 mx-auto mb-2">
-                    <AvatarFallback className="text-xl">
-                      {profile.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <CardTitle className="text-lg">{profile.name}</CardTitle>
+                  <UserAvatar
+                    name={entry.user.name}
+                    avatarUrl={entry.user.avatar_url}
+                    className="h-16 w-16 mx-auto mb-2"
+                    fallbackClassName="text-xl"
+                  />
+                  <CardTitle className="text-lg">{entry.user.name}</CardTitle>
                   <p className="text-xs text-muted-foreground">
-                    {getRankTitle(profile.current_streak)}
+                    {getRankTitle(entry.current_streak)}
                   </p>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-4 text-center">
                     <div>
                       <div className="flex items-center justify-center gap-1">
                         <Flame className="h-4 w-4 text-orange-500" />
-                        <span className="font-bold">{profile.current_streak}</span>
+                        <span className="font-bold">{entry.current_streak}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">Streak</p>
                     </div>
                     <div>
                       <div className="flex items-center justify-center gap-1">
                         <Target className="h-4 w-4 text-green-500" />
-                        <span className="font-bold">{profile.total_completed}</span>
+                        <span className="font-bold">{entry.total_completed}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground">Total</p>
+                      <p className="text-xs text-muted-foreground">{unit}</p>
                     </div>
                   </div>
+                  {debt > 0 && (
+                    <div className="flex items-center justify-center gap-1 text-xs text-red-500 bg-red-500/10 rounded-md py-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      <span>{debt} {unit} debt</span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -227,37 +239,48 @@ export function LeaderboardTable({ profiles }: LeaderboardTableProps) {
                   <TableHead>Name</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead className="text-right">Streak</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">{unit || "Total"}</TableHead>
+                  <TableHead className="text-right">Debt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rest.map((profile, index) => (
-                  <TableRow key={profile.id}>
-                    <TableCell>{getRankIcon(index + 4)}</TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {profile.name.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        {profile.name}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {getRankTitle(profile.current_streak)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Flame className="h-4 w-4 text-orange-500" />
-                        {profile.current_streak}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {profile.total_completed}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {rest.map((entry, index) => {
+                  const debt = entry.pending_carry_over || 0;
+                  return (
+                    <TableRow key={entry.user.id}>
+                      <TableCell>{getRankIcon(index + 4)}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <UserAvatar
+                            name={entry.user.name}
+                            avatarUrl={entry.user.avatar_url}
+                            className="h-8 w-8"
+                          />
+                          {entry.user.name}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getRankTitle(entry.current_streak)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Flame className="h-4 w-4 text-orange-500" />
+                          {entry.current_streak}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {entry.total_completed}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {debt > 0 ? (
+                          <span className="text-red-500 font-medium">{debt}</span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

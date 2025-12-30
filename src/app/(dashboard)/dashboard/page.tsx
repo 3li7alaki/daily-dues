@@ -10,6 +10,9 @@ interface UserCommitmentWithDetails {
   user_id: string;
   commitment_id: string;
   pending_carry_over: number;
+  total_completed: number;
+  current_streak: number;
+  best_streak: number;
   assigned_at: string;
   commitment: Commitment;
 }
@@ -59,32 +62,46 @@ export default async function DashboardPage() {
   const realmStats: Record<string, { totalUsers: number; completedUsers: number }> = {};
 
   for (const realm of realms) {
-    // Get total users in realm (excluding admins)
-    const { count: totalUsers } = await supabase
-      .from("user_realms")
-      .select("*, profiles!inner(role)", { count: "exact", head: true })
-      .eq("realm_id", realm.id)
-      .eq("profiles.role", "user");
-
-    // Get users who have at least one approved log today for this realm
-    const { data: realmUserIds } = await supabase
-      .from("user_realms")
-      .select("user_id")
+    // Get commitments in this realm
+    const { data: realmCommitments } = await supabase
+      .from("commitments")
+      .select("id")
       .eq("realm_id", realm.id);
 
-    const userIds = realmUserIds?.map((r) => r.user_id) || [];
+    const commitmentIds = realmCommitments?.map((c) => c.id) || [];
 
+    if (commitmentIds.length === 0) {
+      // No commitments in realm
+      realmStats[realm.id] = { totalUsers: 0, completedUsers: 0 };
+      continue;
+    }
+
+    // Get users who have at least one commitment assigned in this realm
+    const { data: usersWithCommitments } = await supabase
+      .from("user_commitments")
+      .select("user_id")
+      .in("commitment_id", commitmentIds);
+
+    const uniqueUserIds = [...new Set(usersWithCommitments?.map((uc) => uc.user_id) || [])];
+
+    if (uniqueUserIds.length === 0) {
+      realmStats[realm.id] = { totalUsers: 0, completedUsers: 0 };
+      continue;
+    }
+
+    // Get users who have at least one approved log today for this realm
     const { data: completedLogs } = await supabase
       .from("daily_logs")
       .select("user_id")
       .eq("date", todayStr)
       .eq("status", "approved")
-      .in("user_id", userIds.length > 0 ? userIds : ["none"]);
+      .in("commitment_id", commitmentIds)
+      .in("user_id", uniqueUserIds);
 
     const uniqueCompletedUsers = new Set(completedLogs?.map((l) => l.user_id) || []);
 
     realmStats[realm.id] = {
-      totalUsers: totalUsers || 0,
+      totalUsers: uniqueUserIds.length,
       completedUsers: uniqueCompletedUsers.size,
     };
   }

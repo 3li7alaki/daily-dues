@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Loader2, UserPlus } from "lucide-react";
+import { Loader2, UserPlus, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
+import { registerUser } from "@/app/actions/register";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,125 +23,99 @@ import {
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 
 export default function RegisterPage() {
+  const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [inviteToken, setInviteToken] = useState("");
+  const [realmName, setRealmName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [validatingInvite, setValidatingInvite] = useState(false);
-  const [inviteValid, setInviteValid] = useState<boolean | null>(null);
+  const [validating, setValidating] = useState(true);
+  const [inviteValid, setInviteValid] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
 
   const validateInvite = useCallback(async (token: string) => {
-    setValidatingInvite(true);
+    setValidating(true);
     const { data } = await supabase
       .from("invites")
-      .select("email")
+      .select("email, realm:realms(name)")
       .eq("token", token)
       .eq("used", false)
       .gt("expires_at", new Date().toISOString())
       .single();
 
-    setInviteValid(!!data);
     if (data?.email) {
+      setInviteValid(true);
       setEmail(data.email);
+      // @ts-expect-error - realm is joined
+      setRealmName(data.realm?.name || "");
+    } else {
+      toast.error("Invalid or expired invite link");
+      router.push("/login");
+      return;
     }
-    setValidatingInvite(false);
-  }, [supabase]);
+    setValidating(false);
+  }, [supabase, router]);
 
   useEffect(() => {
     const token = searchParams.get("token");
-    if (token) {
-      setInviteToken(token);
-      validateInvite(token);
+    if (!token) {
+      router.push("/login");
+      return;
     }
-  }, [searchParams, validateInvite]);
+    setInviteToken(token);
+    validateInvite(token);
+  }, [searchParams, validateInvite, router]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!inviteToken) {
-      toast.error("An invite token is required");
-      return;
-    }
-
     setLoading(true);
 
-    // Validate invite
-    const { data: invite, error: inviteError } = await supabase
-      .from("invites")
-      .select("id, email, realm_id")
-      .eq("token", inviteToken)
-      .eq("used", false)
-      .gt("expires_at", new Date().toISOString())
-      .single();
+    const result = await registerUser({
+      token: inviteToken,
+      username,
+      name,
+      password,
+    });
 
-    if (inviteError || !invite) {
-      toast.error("Invalid or expired invite token");
+    if (!result.success) {
+      toast.error(result.error || "Failed to create account");
       setLoading(false);
       return;
     }
 
-    if (invite.email !== email) {
-      toast.error("Email doesn't match the invite");
-      setLoading(false);
-      return;
-    }
-
-    // Sign up
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // Sign in the user after registration
+    const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
-      options: {
-        data: { name },
-      },
     });
 
-    if (authError || !authData.user) {
-      toast.error(authError?.message || "Failed to create account");
-      setLoading(false);
+    if (signInError) {
+      toast.error("Account created but failed to sign in. Please login manually.");
+      router.push("/login");
       return;
     }
-
-    // Create profile
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: authData.user.id,
-      email,
-      name,
-      role: "user",
-    });
-
-    if (profileError) {
-      toast.error("Failed to create profile");
-      setLoading(false);
-      return;
-    }
-
-    // Add user to the invite's realm
-    const { error: realmError } = await supabase.from("user_realms").insert({
-      user_id: authData.user.id,
-      realm_id: invite.realm_id,
-    });
-
-    if (realmError) {
-      toast.error("Failed to join realm");
-      setLoading(false);
-      return;
-    }
-
-    // Mark invite as used
-    await supabase
-      .from("invites")
-      .update({ used: true })
-      .eq("id", invite.id);
 
     toast.success("Account created! Welcome to Daily Dues!");
     router.push("/dashboard");
     router.refresh();
   };
+
+  if (validating) {
+    return (
+      <div className="flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!inviteValid) {
+    return null;
+  }
 
   return (
     <motion.div
@@ -156,48 +131,33 @@ export default function RegisterPage() {
           </div>
           <CardTitle className="text-2xl font-bold">Join Daily Dues</CardTitle>
           <CardDescription>
-            Create your account with an invite
+            {realmName ? `You're joining ${realmName}` : "Create your account"}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleRegister}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="token">Invite Token</Label>
+              <Label htmlFor="username">Username</Label>
               <Input
-                id="token"
+                id="username"
                 type="text"
-                placeholder="Enter your invite token"
-                value={inviteToken}
-                onChange={(e) => {
-                  setInviteToken(e.target.value);
-                  if (e.target.value.length > 10) {
-                    validateInvite(e.target.value);
-                  }
-                }}
+                placeholder="johndoe"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
                 required
+                minLength={3}
+                maxLength={20}
               />
-              {validatingInvite && (
-                <p className="text-xs text-muted-foreground">
-                  Validating invite...
-                </p>
-              )}
-              {inviteValid === false && !validatingInvite && inviteToken && (
-                <p className="text-xs text-destructive">
-                  Invalid or expired invite
-                </p>
-              )}
-              {inviteValid === true && (
-                <p className="text-xs text-green-600 dark:text-green-400">
-                  Valid invite!
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Lowercase letters, numbers, and underscores only
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">Display Name</Label>
               <Input
                 id="name"
                 type="text"
-                placeholder="Your name"
+                placeholder="John Doe"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -208,31 +168,42 @@ export default function RegisterPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={inviteValid === true}
-                required
+                disabled
+                className="bg-muted"
               />
+              <p className="text-xs text-muted-foreground">
+                Email is set by your invite
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={6}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={6}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
+          <CardFooter className="flex flex-col gap-4 pt-2">
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || inviteValid === false}
+              disabled={loading}
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

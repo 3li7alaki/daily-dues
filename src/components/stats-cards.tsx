@@ -3,31 +3,51 @@
 import { motion } from "framer-motion";
 import { Flame, Target, Trophy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import type { Profile } from "@/types/database";
+import type { Commitment, UserCommitment } from "@/types/database";
 
-interface StatsCardsProps {
-  profile: Profile;
+interface UserCommitmentWithDetails extends UserCommitment {
+  commitment: Commitment;
 }
 
-export function StatsCards({ profile }: StatsCardsProps) {
+interface StatsCardsProps {
+  userCommitments: UserCommitmentWithDetails[];
+}
+
+export function StatsCards({ userCommitments }: StatsCardsProps) {
+  // Aggregate stats across all commitments
+  const totalCompleted = userCommitments.reduce(
+    (sum, uc) => sum + uc.total_completed,
+    0
+  );
+  const bestStreak = Math.max(
+    0,
+    ...userCommitments.map((uc) => uc.best_streak)
+  );
+  const currentStreak = Math.min(
+    // Current streak is the minimum across active commitments (one break = all break)
+    ...userCommitments.map((uc) => uc.current_streak),
+    // If no commitments, streak is 0
+    userCommitments.length > 0 ? Infinity : 0
+  );
+
   const stats = [
     {
       label: "Current Streak",
-      value: profile.current_streak,
+      value: `${currentStreak} days`,
       icon: Flame,
       color: "text-orange-500",
       bgColor: "bg-orange-500/10",
     },
     {
       label: "Best Streak",
-      value: profile.best_streak,
+      value: `${bestStreak} days`,
       icon: Trophy,
       color: "text-yellow-500",
       bgColor: "bg-yellow-500/10",
     },
     {
       label: "Total Completed",
-      value: profile.total_completed,
+      value: totalCompleted,
       icon: Target,
       color: "text-green-500",
       bgColor: "bg-green-500/10",

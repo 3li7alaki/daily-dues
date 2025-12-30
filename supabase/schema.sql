@@ -1,3 +1,15 @@
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+
+-- Grant permissions to Supabase roles
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+
 -- Daily Dues Database Schema
 -- Run this in Supabase SQL Editor to set up your database
 
@@ -22,6 +34,7 @@ CREATE TABLE realms (
 -- Profiles table (extends Supabase auth.users)
 CREATE TABLE profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     role user_role DEFAULT 'user',
@@ -74,12 +87,14 @@ CREATE TABLE commitments (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- User commitments (assignments) - now includes realm_id for clarity
+-- User commitments (assignments) - includes per-commitment streaks
 CREATE TABLE user_commitments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     commitment_id UUID NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
     pending_carry_over INTEGER DEFAULT 0,
+    current_streak INTEGER DEFAULT 0,
+    best_streak INTEGER DEFAULT 0,
     assigned_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, commitment_id)
 );
@@ -102,6 +117,7 @@ CREATE TABLE daily_logs (
 );
 
 -- Indexes for performance
+CREATE INDEX idx_profiles_username ON profiles(username);
 CREATE INDEX idx_profiles_role ON profiles(role);
 CREATE INDEX idx_user_realms_user ON user_realms(user_id);
 CREATE INDEX idx_user_realms_realm ON user_realms(realm_id);
@@ -122,24 +138,48 @@ ALTER TABLE commitments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_commitments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
 
+-- Helper function to check if current user is admin (bypasses RLS)
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS BOOLEAN AS $$
+DECLARE
+    user_role user_role;
+BEGIN
+    SELECT role INTO user_role FROM profiles WHERE id = auth.uid();
+    RETURN user_role = 'admin';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Helper function to get email by username for login (bypasses RLS, public access)
+CREATE OR REPLACE FUNCTION get_email_by_username(p_username TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    user_email TEXT;
+BEGIN
+    SELECT email INTO user_email FROM profiles WHERE username = p_username;
+    RETURN user_email;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Realms policies
 CREATE POLICY "Users can view their realms" ON realms
     FOR SELECT USING (
         id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
-        OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+        OR is_admin()
     );
 
 CREATE POLICY "Admins can manage realms" ON realms
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR ALL USING (is_admin());
 
 -- Profiles policies
+CREATE POLICY "Users can view own profile" ON profiles
+    FOR SELECT USING (id = auth.uid());
+
+CREATE POLICY "Admins can view all profiles" ON profiles
+    FOR SELECT USING (is_admin());
+
 CREATE POLICY "Users can view profiles in their realms" ON profiles
     FOR SELECT USING (
         id IN (SELECT user_id FROM user_realms WHERE realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid()))
-        OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-        OR id = auth.uid()
     );
 
 CREATE POLICY "Users can update own profile" ON profiles
@@ -153,23 +193,17 @@ CREATE POLICY "Users can view own realm memberships" ON user_realms
     FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can view all realm memberships" ON user_realms
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR SELECT USING (is_admin());
 
 CREATE POLICY "Admins can manage realm memberships" ON user_realms
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR ALL USING (is_admin());
 
 CREATE POLICY "Users can join realms via invite" ON user_realms
     FOR INSERT WITH CHECK (user_id = auth.uid());
 
 -- Invites policies
 CREATE POLICY "Admins can manage invites" ON invites
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR ALL USING (is_admin());
 
 CREATE POLICY "Anyone can read invites for registration" ON invites
     FOR SELECT USING (true);
@@ -178,47 +212,37 @@ CREATE POLICY "Anyone can read invites for registration" ON invites
 CREATE POLICY "Users can view commitments in their realms" ON commitments
     FOR SELECT USING (
         realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
-        OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+        OR is_admin()
     );
 
 CREATE POLICY "Admins can manage commitments" ON commitments
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR ALL USING (is_admin());
 
 -- User commitments policies
 CREATE POLICY "Users can view own commitments" ON user_commitments
     FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can view all user commitments" ON user_commitments
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR SELECT USING (is_admin());
 
 CREATE POLICY "Admins can manage user commitments" ON user_commitments
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR ALL USING (is_admin());
 
 -- Daily logs policies
 CREATE POLICY "Users can view own logs" ON daily_logs
     FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can view all logs" ON daily_logs
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR SELECT USING (is_admin());
 
 CREATE POLICY "Users can insert own logs" ON daily_logs
     FOR INSERT WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY "Users can update own pending logs" ON daily_logs
-    FOR UPDATE USING (user_id = auth.uid() AND status = 'pending');
+CREATE POLICY "Users can update own pending or rejected logs" ON daily_logs
+    FOR UPDATE USING (user_id = auth.uid() AND status IN ('pending', 'rejected'));
 
 CREATE POLICY "Admins can update any log" ON daily_logs
-    FOR UPDATE USING (
-        EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-    );
+    FOR UPDATE USING (is_admin());
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -246,19 +270,17 @@ CREATE TRIGGER daily_logs_updated_at
     BEFORE UPDATE ON daily_logs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- Create first admin and realm function
--- CALL create_admin_with_realm('your-email@example.com', 'Your Name', 'My Team', 'my-team');
-CREATE OR REPLACE PROCEDURE create_admin_with_realm(
+-- Make a user an admin (global, not tied to any realm)
+-- CALL make_admin('admin', 'your-email@example.com', 'Your Name');
+CREATE OR REPLACE PROCEDURE make_admin(
+    admin_username TEXT,
     admin_email TEXT,
-    admin_name TEXT,
-    realm_name TEXT,
-    realm_slug TEXT
+    admin_name TEXT
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
     admin_id UUID;
-    new_realm_id UUID;
 BEGIN
     -- Get the user id from auth.users
     SELECT id INTO admin_id FROM auth.users WHERE email = admin_email;
@@ -267,22 +289,32 @@ BEGIN
         RAISE EXCEPTION 'User with email % not found. Please sign up first.', admin_email;
     END IF;
 
-    -- Create the realm
-    INSERT INTO realms (name, slug, created_by)
-    VALUES (realm_name, realm_slug, admin_id)
+    -- Create or update profile as admin
+    INSERT INTO profiles (id, username, email, name, role)
+    VALUES (admin_id, admin_username, admin_email, admin_name, 'admin')
+    ON CONFLICT (id) DO UPDATE SET role = 'admin', username = admin_username, name = admin_name;
+
+    RAISE NOTICE 'Admin created successfully for %', admin_email;
+END;
+$$;
+
+-- Create a new realm
+-- SELECT create_realm('My Team', 'my-team');
+CREATE OR REPLACE FUNCTION create_realm(
+    realm_name TEXT,
+    realm_slug TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    new_realm_id UUID;
+BEGIN
+    INSERT INTO realms (name, slug)
+    VALUES (realm_name, realm_slug)
     RETURNING id INTO new_realm_id;
 
-    -- Create or update profile as admin
-    INSERT INTO profiles (id, email, name, role)
-    VALUES (admin_id, admin_email, admin_name, 'admin')
-    ON CONFLICT (id) DO UPDATE SET role = 'admin';
-
-    -- Add admin to the realm
-    INSERT INTO user_realms (user_id, realm_id)
-    VALUES (admin_id, new_realm_id)
-    ON CONFLICT (user_id, realm_id) DO NOTHING;
-
-    RAISE NOTICE 'Admin created successfully for % in realm %', admin_email, realm_name;
+    RETURN new_realm_id;
 END;
 $$;
 
@@ -305,3 +337,178 @@ BEGIN
     WHERE ur.realm_id = p_realm_id AND p.role = 'user';
 END;
 $$ LANGUAGE plpgsql;
+
+-- End of day processing function
+-- Processes all user commitments: creates missing logs, calculates carry-over, updates streaks
+CREATE OR REPLACE FUNCTION process_end_of_day(p_date DATE DEFAULT CURRENT_DATE)
+RETURNS void AS $$
+DECLARE
+    uc RECORD;
+    existing_log RECORD;
+    day_of_week INTEGER;
+    is_active_day BOOLEAN;
+    total_due INTEGER;
+    completed INTEGER;
+    missed INTEGER;
+    new_carry_over INTEGER;
+    commitment_completed BOOLEAN;
+    user_completed_all BOOLEAN;
+    current_user_id UUID;
+    user_commitment_count INTEGER;
+    user_completed_count INTEGER;
+BEGIN
+    -- Get day of week (0 = Sunday, 1 = Monday, etc.)
+    day_of_week := EXTRACT(DOW FROM p_date)::INTEGER;
+
+    -- Process each user_commitment
+    FOR uc IN
+        SELECT
+            uc.id as uc_id,
+            uc.user_id,
+            uc.commitment_id,
+            uc.pending_carry_over,
+            uc.current_streak as uc_current_streak,
+            uc.best_streak as uc_best_streak,
+            c.daily_target,
+            c.active_days,
+            c.punishment_multiplier
+        FROM user_commitments uc
+        JOIN commitments c ON c.id = uc.commitment_id
+        WHERE c.is_active = true
+    LOOP
+        -- Check if today is an active day for this commitment
+        is_active_day := day_of_week = ANY(uc.active_days);
+
+        IF NOT is_active_day THEN
+            CONTINUE; -- Skip non-active days
+        END IF;
+
+        -- Get existing log for today
+        SELECT * INTO existing_log
+        FROM daily_logs
+        WHERE user_id = uc.user_id
+          AND commitment_id = uc.commitment_id
+          AND date = p_date;
+
+        -- Calculate totals
+        total_due := uc.daily_target + COALESCE(uc.pending_carry_over, 0);
+
+        IF existing_log IS NULL THEN
+            -- No log exists - user didn't submit anything
+            completed := 0;
+
+            -- Create a log entry with 0 completed (auto-rejected)
+            INSERT INTO daily_logs (
+                user_id, commitment_id, date, target_amount,
+                completed_amount, carry_over_from_previous, status
+            ) VALUES (
+                uc.user_id, uc.commitment_id, p_date, uc.daily_target,
+                0, COALESCE(uc.pending_carry_over, 0), 'rejected'
+            );
+        ELSE
+            -- Log exists
+            completed := COALESCE(existing_log.completed_amount, 0);
+
+            -- Auto-reject pending logs at end of day
+            IF existing_log.status = 'pending' THEN
+                UPDATE daily_logs
+                SET status = 'rejected'
+                WHERE id = existing_log.id;
+            END IF;
+        END IF;
+
+        -- Calculate missed amount and new carry-over
+        missed := GREATEST(0, total_due - completed);
+
+        IF missed > 0 THEN
+            new_carry_over := (missed * uc.punishment_multiplier)::INTEGER;
+            commitment_completed := false;
+        ELSE
+            new_carry_over := 0;
+            commitment_completed := true;
+        END IF;
+
+        -- Update user_commitment with new carry-over and streak
+        IF commitment_completed THEN
+            UPDATE user_commitments
+            SET
+                pending_carry_over = new_carry_over,
+                current_streak = uc.uc_current_streak + 1,
+                best_streak = GREATEST(uc.uc_best_streak, uc.uc_current_streak + 1)
+            WHERE id = uc.uc_id;
+        ELSE
+            UPDATE user_commitments
+            SET
+                pending_carry_over = new_carry_over,
+                current_streak = 0
+            WHERE id = uc.uc_id;
+        END IF;
+    END LOOP;
+
+    -- Update global streaks on profiles
+    FOR current_user_id IN
+        SELECT DISTINCT user_id FROM user_commitments
+    LOOP
+        -- Count active commitments for today
+        SELECT COUNT(*) INTO user_commitment_count
+        FROM user_commitments uc
+        JOIN commitments c ON c.id = uc.commitment_id
+        WHERE uc.user_id = current_user_id
+          AND c.is_active = true
+          AND day_of_week = ANY(c.active_days);
+
+        -- Skip if user has no active commitments today
+        IF user_commitment_count = 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- Count completed commitments (approved logs where completed >= due)
+        SELECT COUNT(*) INTO user_completed_count
+        FROM daily_logs dl
+        JOIN user_commitments uc ON uc.user_id = dl.user_id AND uc.commitment_id = dl.commitment_id
+        JOIN commitments c ON c.id = dl.commitment_id
+        WHERE dl.user_id = current_user_id
+          AND dl.date = p_date
+          AND dl.status = 'approved'
+          AND dl.completed_amount >= (c.daily_target + dl.carry_over_from_previous);
+
+        -- Update global streak
+        IF user_completed_count >= user_commitment_count THEN
+            -- User completed all commitments
+            UPDATE profiles
+            SET
+                current_streak = current_streak + 1,
+                best_streak = GREATEST(best_streak, current_streak + 1),
+                total_completed = total_completed + user_completed_count
+            WHERE id = current_user_id;
+        ELSE
+            -- User missed at least one commitment
+            UPDATE profiles
+            SET current_streak = 0
+            WHERE id = current_user_id;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Enable pg_cron extension
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Clear any existing cron jobs for this app
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname LIKE 'daily-dues%';
+
+-- Schedule end-of-day processing (21:00 UTC = 00:00 Bahrain time)
+SELECT cron.schedule(
+    'daily-dues-end-of-day',
+    '0 21 * * *',
+    $$SELECT process_end_of_day()$$
+);
+
+-- Try to create default admin (won't fail if user doesn't exist yet)
+DO $$
+BEGIN
+    CALL make_admin('admin', 'admin@daily.dues', 'Admin');
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Admin user not found in auth.users - create user first then run: CALL make_admin(''admin'', ''admin@daily.dues'', ''Admin'');';
+END;
+$$;

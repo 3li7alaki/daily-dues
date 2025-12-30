@@ -17,7 +17,7 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen bg-background">
       <NavHeader profile={profile} />
-      <main className="container py-6">{children}</main>
+      <main className="container mx-auto max-w-6xl px-4 py-6 md:py-8">{children}</main>
     </div>
   );
 }

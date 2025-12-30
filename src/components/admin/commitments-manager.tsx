@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
   Trash2,
@@ -13,8 +13,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { createClient } from "@/lib/supabase/client";
 import { BAHRAIN_WORK_DAYS, DAY_NAMES } from "@/lib/carry-over";
+import {
+  useCommitments,
+  useCreateCommitment,
+  useUpdateCommitment,
+  useToggleCommitmentActive,
+  useDeleteCommitment,
+} from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,14 +40,20 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRealm } from "@/contexts/realm-context";
 import type { Commitment } from "@/types/database";
-
-interface CommitmentsManagerProps {
-  commitments: Commitment[];
-}
 
 interface CommitmentForm {
   name: string;
@@ -61,13 +73,20 @@ const defaultForm: CommitmentForm = {
   punishment_multiplier: 2,
 };
 
-export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
+export function CommitmentsManager() {
   const [form, setForm] = useState<CommitmentForm>(defaultForm);
-  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const supabase = createClient();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [commitmentToDelete, setCommitmentToDelete] = useState<Commitment | null>(null);
   const { currentRealm } = useRealm();
+
+  // React Query
+  const { data: commitments = [], isLoading: loadingCommitments } = useCommitments();
+  const createCommitmentMutation = useCreateCommitment();
+  const updateCommitmentMutation = useUpdateCommitment();
+  const toggleActiveMutation = useToggleCommitmentActive();
+  const deleteCommitmentMutation = useDeleteCommitment();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,45 +96,26 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
       return;
     }
 
-    setLoading(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (editingId) {
-      // Update existing
-      const { error } = await supabase
-        .from("commitments")
-        .update({
+    try {
+      if (editingId) {
+        await updateCommitmentMutation.mutateAsync({
+          id: editingId,
           ...form,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingId);
-
-      if (error) {
-        toast.error("Failed to update commitment");
-      } else {
+        });
         toast.success("Commitment updated!");
-      }
-    } else {
-      // Create new
-      const { error } = await supabase.from("commitments").insert({
-        ...form,
-        realm_id: currentRealm.id,
-        created_by: user!.id,
-      });
-
-      if (error) {
-        toast.error("Failed to create commitment");
       } else {
+        await createCommitmentMutation.mutateAsync({
+          ...form,
+          realm_id: currentRealm.id,
+        });
         toast.success(`Commitment created in ${currentRealm.name}!`);
       }
+      setDialogOpen(false);
+      setForm(defaultForm);
+      setEditingId(null);
+    } catch {
+      toast.error(editingId ? "Failed to update commitment" : "Failed to create commitment");
     }
-
-    setLoading(false);
-    setDialogOpen(false);
-    setForm(defaultForm);
-    setEditingId(null);
-    window.location.reload();
   };
 
   const openEditDialog = (commitment: Commitment) => {
@@ -132,31 +132,32 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
   };
 
   const toggleActive = async (commitment: Commitment) => {
-    const { error } = await supabase
-      .from("commitments")
-      .update({ is_active: !commitment.is_active })
-      .eq("id", commitment.id);
-
-    if (error) {
-      toast.error("Failed to toggle status");
-    } else {
+    try {
+      await toggleActiveMutation.mutateAsync({
+        id: commitment.id,
+        is_active: !commitment.is_active,
+      });
       toast.success(commitment.is_active ? "Commitment deactivated" : "Commitment activated");
-      window.location.reload();
+    } catch {
+      toast.error("Failed to toggle status");
     }
   };
 
-  const deleteCommitment = async (id: string) => {
-    if (!confirm("Are you sure? This will remove the commitment from all users.")) {
-      return;
-    }
+  const openDeleteDialog = (commitment: Commitment) => {
+    setCommitmentToDelete(commitment);
+    setDeleteDialogOpen(true);
+  };
 
-    const { error } = await supabase.from("commitments").delete().eq("id", id);
+  const handleDeleteCommitment = async () => {
+    if (!commitmentToDelete) return;
 
-    if (error) {
-      toast.error("Failed to delete commitment");
-    } else {
+    try {
+      await deleteCommitmentMutation.mutateAsync(commitmentToDelete.id);
       toast.success("Commitment deleted");
-      window.location.reload();
+      setDeleteDialogOpen(false);
+      setCommitmentToDelete(null);
+    } catch {
+      toast.error("Failed to delete commitment");
     }
   };
 
@@ -172,6 +173,16 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
   const realmCommitments = currentRealm
     ? commitments.filter((c) => c.realm_id === currentRealm.id)
     : commitments;
+
+  const isLoading = createCommitmentMutation.isPending || updateCommitmentMutation.isPending;
+
+  if (loadingCommitments) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -288,8 +299,8 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={loading}>
-                {loading ? (
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : editingId ? (
                   "Update"
@@ -314,94 +325,135 @@ export function CommitmentsManager({ commitments }: CommitmentsManagerProps) {
             </CardContent>
           </Card>
         ) : (
-          realmCommitments.map((commitment, index) => (
-            <motion.div
-              key={commitment.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
-            >
-              <Card className={!commitment.is_active ? "opacity-60" : ""}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        {commitment.name}
-                        {!commitment.is_active && (
-                          <Badge variant="secondary">Inactive</Badge>
+          <AnimatePresence mode="popLayout">
+            {realmCommitments.map((commitment, index) => (
+              <motion.div
+                key={commitment.id}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
+              >
+                <Card className={!commitment.is_active ? "opacity-60" : ""}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          {commitment.name}
+                          {!commitment.is_active && (
+                            <Badge variant="secondary">Inactive</Badge>
+                          )}
+                        </CardTitle>
+                        {commitment.description && (
+                          <CardDescription>{commitment.description}</CardDescription>
                         )}
-                      </CardTitle>
-                      {commitment.description && (
-                        <CardDescription>{commitment.description}</CardDescription>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Daily Target</p>
+                        <p className="font-medium">
+                          {commitment.daily_target} {commitment.unit}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Multiplier</p>
+                        <p className="font-medium">{commitment.punishment_multiplier}x</p>
+                      </div>
+                    </div>
                     <div>
-                      <p className="text-muted-foreground">Daily Target</p>
-                      <p className="font-medium">
-                        {commitment.daily_target} {commitment.unit}
-                      </p>
+                      <p className="text-sm text-muted-foreground mb-1">Active Days</p>
+                      <div className="flex flex-wrap gap-1">
+                        {commitment.active_days.map((day) => (
+                          <Badge key={day} variant="outline" className="text-xs">
+                            {DAY_NAMES[day].slice(0, 3)}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">Multiplier</p>
-                      <p className="font-medium">{commitment.punishment_multiplier}x</p>
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(commitment)}
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleActive(commitment)}
+                        disabled={
+                          toggleActiveMutation.isPending &&
+                          toggleActiveMutation.variables?.id === commitment.id
+                        }
+                      >
+                        {toggleActiveMutation.isPending &&
+                        toggleActiveMutation.variables?.id === commitment.id ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : commitment.is_active ? (
+                          <>
+                            <ToggleRight className="h-4 w-4 mr-1" />
+                            Deactivate
+                          </>
+                        ) : (
+                          <>
+                            <ToggleLeft className="h-4 w-4 mr-1" />
+                            Activate
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => openDeleteDialog(commitment)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
                     </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Active Days</p>
-                    <div className="flex flex-wrap gap-1">
-                      {commitment.active_days.map((day) => (
-                        <Badge key={day} variant="outline" className="text-xs">
-                          {DAY_NAMES[day].slice(0, 3)}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEditDialog(commitment)}
-                    >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleActive(commitment)}
-                    >
-                      {commitment.is_active ? (
-                        <>
-                          <ToggleRight className="h-4 w-4 mr-1" />
-                          Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <ToggleLeft className="h-4 w-4 mr-1" />
-                          Activate
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => deleteCommitment(commitment.id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Commitment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{commitmentToDelete?.name}</strong>?
+              This will remove the commitment from all users. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteCommitmentMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCommitment}
+              disabled={deleteCommitmentMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteCommitmentMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

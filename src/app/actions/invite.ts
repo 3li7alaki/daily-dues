@@ -12,15 +12,17 @@ interface CreateInviteParams {
 interface CreateInviteResult {
   success: boolean;
   token?: string;
+  addedDirectly?: boolean;
   error?: string;
 }
 
 export async function createInvite({
-  email,
+  email: rawEmail,
   realmId,
   realmName,
 }: CreateInviteParams): Promise<CreateInviteResult> {
   const supabase = await createClient();
+  const email = rawEmail.toLowerCase().trim();
 
   // Get current user
   const {
@@ -42,7 +44,42 @@ export async function createInvite({
     return { success: false, error: "Only admins can send invites" };
   }
 
-  // Generate token
+  // Check if user with this email already exists (case insensitive)
+  const { data: existingUser } = await supabase
+    .from("profiles")
+    .select("id, name")
+    .ilike("email", email)
+    .single();
+
+  if (existingUser) {
+    // User exists - check if already in this realm
+    const { data: existingMembership } = await supabase
+      .from("user_realms")
+      .select("id")
+      .eq("user_id", existingUser.id)
+      .eq("realm_id", realmId)
+      .single();
+
+    if (existingMembership) {
+      return { success: false, error: "User is already a member of this realm" };
+    }
+
+    // Add user directly to the realm
+    const { error: realmError } = await supabase
+      .from("user_realms")
+      .insert({
+        user_id: existingUser.id,
+        realm_id: realmId,
+      });
+
+    if (realmError) {
+      return { success: false, error: "Failed to add user to realm" };
+    }
+
+    return { success: true, addedDirectly: true };
+  }
+
+  // User doesn't exist - create invite
   const token = crypto.randomUUID();
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry

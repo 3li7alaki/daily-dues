@@ -1,15 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react";
 import { toast } from "sonner";
 
-import { createClient } from "@/lib/supabase/client";
-import { calculateCarryOver } from "@/lib/carry-over";
+import { usePendingApprovals, useApproveLog } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { DailyLog, Profile, Commitment } from "@/types/database";
@@ -19,84 +17,44 @@ interface LogWithRelations extends DailyLog {
   commitment: Commitment;
 }
 
-interface ApprovalsManagerProps {
-  logs: LogWithRelations[];
-}
-
-export function ApprovalsManager({ logs }: ApprovalsManagerProps) {
-  const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const supabase = createClient();
+export function ApprovalsManager() {
+  // React Query
+  const { data: logs = [], isLoading: loadingLogs } = usePendingApprovals();
+  const approveLogMutation = useApproveLog();
 
   const handleApproval = async (log: LogWithRelations, approved: boolean) => {
-    setLoading((prev) => ({ ...prev, [log.id]: true }));
-
-    const { data: { user: admin } } = await supabase.auth.getUser();
-
-    // Update log status
-    const { error } = await supabase
-      .from("daily_logs")
-      .update({
-        status: approved ? "approved" : "rejected",
-        reviewed_by: admin!.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", log.id);
-
-    if (error) {
+    try {
+      await approveLogMutation.mutateAsync({ log, approved });
+      toast.success(approved ? "Approved!" : "Rejected");
+    } catch {
       toast.error("Failed to update status");
-      setLoading((prev) => ({ ...prev, [log.id]: false }));
-      return;
     }
-
-    if (approved) {
-      // Calculate stats updates
-      const totalDue = log.target_amount + log.carry_over_from_previous;
-      const completed = log.completed_amount;
-      const missed = Math.max(0, totalDue - completed);
-
-      if (completed >= totalDue) {
-        // Full completion - increment streak and clear carry-over
-        await supabase
-          .from("profiles")
-          .update({
-            total_completed: log.user.total_completed + completed,
-            current_streak: log.user.current_streak + 1,
-            best_streak: Math.max(log.user.best_streak, log.user.current_streak + 1),
-          })
-          .eq("id", log.user_id);
-
-        // Clear carry-over
-        await supabase
-          .from("user_commitments")
-          .update({ pending_carry_over: 0 })
-          .eq("user_id", log.user_id)
-          .eq("commitment_id", log.commitment_id);
-      } else {
-        // Partial completion - reset streak and store punishment
-        await supabase
-          .from("profiles")
-          .update({
-            total_completed: log.user.total_completed + completed,
-            current_streak: 0,
-          })
-          .eq("id", log.user_id);
-
-        // Store carry-over punishment for next day
-        const carryOver = calculateCarryOver(
-          missed,
-          log.commitment.punishment_multiplier
-        );
-        await supabase
-          .from("user_commitments")
-          .update({ pending_carry_over: carryOver })
-          .eq("user_id", log.user_id)
-          .eq("commitment_id", log.commitment_id);
-      }
-    }
-
-    toast.success(approved ? "Approved!" : "Rejected");
-    window.location.reload();
   };
+
+  const isLoading = (logId: string, action: "approve" | "reject") => {
+    return (
+      approveLogMutation.isPending &&
+      approveLogMutation.variables?.log.id === logId &&
+      (action === "approve"
+        ? approveLogMutation.variables?.approved
+        : !approveLogMutation.variables?.approved)
+    );
+  };
+
+  const isAnyLoading = (logId: string) => {
+    return (
+      approveLogMutation.isPending &&
+      approveLogMutation.variables?.log.id === logId
+    );
+  };
+
+  if (loadingLogs) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (logs.length === 0) {
     return (
@@ -114,97 +72,101 @@ export function ApprovalsManager({ logs }: ApprovalsManagerProps) {
 
   return (
     <div className="space-y-4">
-      {logs.map((log, index) => {
-        const totalDue = log.target_amount + log.carry_over_from_previous;
-        const progress = Math.min((log.completed_amount / totalDue) * 100, 100);
-        const isComplete = log.completed_amount >= totalDue;
+      <AnimatePresence mode="popLayout">
+        {logs.map((log, index) => {
+          const totalDue = log.target_amount + log.carry_over_from_previous;
+          const progress = Math.min((log.completed_amount / totalDue) * 100, 100);
+          const isComplete = log.completed_amount >= totalDue;
 
-        return (
-          <motion.div
-            key={log.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.05 }}
-          >
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col md:flex-row md:items-center gap-4">
-                  {/* User Info */}
-                  <div className="flex items-center gap-3 flex-1">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback>
-                        {log.user.name.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="font-medium">{log.user.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {log.commitment.name} • {new Date(log.date).toLocaleDateString()}
-                      </p>
+          return (
+            <motion.div
+              key={log.id}
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: -100 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+            >
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex flex-col md:flex-row md:items-center gap-4">
+                    {/* User Info */}
+                    <div className="flex items-center gap-3 flex-1">
+                      <UserAvatar
+                        name={log.user.name}
+                        avatarUrl={log.user.avatar_url}
+                        className="h-10 w-10"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium">{log.user.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {log.commitment.name} • {new Date(log.date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress */}
+                    <div className="flex-1 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>
+                          {log.completed_amount} / {totalDue} {log.commitment.unit}
+                        </span>
+                        {isComplete ? (
+                          <Badge className="bg-green-500/10 text-green-600">
+                            Complete
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Partial</Badge>
+                        )}
+                      </div>
+                      <Progress value={progress} className="h-2" />
+                      {log.carry_over_from_previous > 0 && (
+                        <p className="text-xs text-orange-500">
+                          Includes +{log.carry_over_from_previous} carry-over
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        onClick={() => handleApproval(log, false)}
+                        disabled={isAnyLoading(log.id)}
+                      >
+                        {isLoading(log.id, "reject") ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <X className="h-4 w-4 mr-1" />
+                            Reject
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleApproval(log, true)}
+                        disabled={isAnyLoading(log.id)}
+                      >
+                        {isLoading(log.id, "approve") ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 mr-1" />
+                            Approve
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
-
-                  {/* Progress */}
-                  <div className="flex-1 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>
-                        {log.completed_amount} / {totalDue} {log.commitment.unit}
-                      </span>
-                      {isComplete ? (
-                        <Badge className="bg-green-500/10 text-green-600">
-                          Complete
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Partial</Badge>
-                      )}
-                    </div>
-                    <Progress value={progress} className="h-2" />
-                    {log.carry_over_from_previous > 0 && (
-                      <p className="text-xs text-orange-500">
-                        Includes +{log.carry_over_from_previous} carry-over
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() => handleApproval(log, false)}
-                      disabled={loading[log.id]}
-                    >
-                      {loading[log.id] ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>
-                          <X className="h-4 w-4 mr-1" />
-                          Reject
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleApproval(log, true)}
-                      disabled={loading[log.id]}
-                    >
-                      {loading[log.id] ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>
-                          <Check className="h-4 w-4 mr-1" />
-                          Approve
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        );
-      })}
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }

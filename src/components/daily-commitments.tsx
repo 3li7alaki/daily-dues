@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Check, Clock, Loader2, X, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
-import { createClient } from "@/lib/supabase/client";
+import { useLogProgress } from "@/lib/queries";
 import { formatDateForDb, isWorkDay } from "@/lib/carry-over";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,16 +33,17 @@ interface DailyCommitmentsProps {
 export function DailyCommitments({
   profile,
   userCommitments,
-  todayLogs,
+  todayLogs: initialLogs,
   today,
 }: DailyCommitmentsProps) {
   const [amounts, setAmounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const supabase = createClient();
+  const [logs, setLogs] = useState<DailyLog[]>(initialLogs);
   const todayStr = formatDateForDb(today);
 
+  const logProgressMutation = useLogProgress();
+
   const getLogForCommitment = (commitmentId: string) =>
-    todayLogs.find((log) => log.commitment_id === commitmentId);
+    logs.find((log) => log.commitment_id === commitmentId);
 
   // Filter to only show commitments active today
   const activeToday = userCommitments.filter((uc) =>
@@ -56,52 +57,39 @@ export function DailyCommitments({
       return;
     }
 
-    setLoading((prev) => ({ ...prev, [uc.commitment.id]: true }));
-
     const existingLog = getLogForCommitment(uc.commitment.id);
     const carryOver = uc.pending_carry_over || 0;
 
-    if (existingLog) {
-      // Update existing log
-      const { error } = await supabase
-        .from("daily_logs")
-        .update({
-          completed_amount: amount,
-          status: "pending",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingLog.id);
-
-      if (error) {
-        toast.error("Failed to update log");
-      } else {
-        toast.success("Progress updated! Awaiting approval.");
-      }
-    } else {
-      // Create new log with carry-over from user_commitment
-      const { error } = await supabase.from("daily_logs").insert({
-        user_id: profile.id,
-        commitment_id: uc.commitment.id,
+    try {
+      const newLog = await logProgressMutation.mutateAsync({
+        existingLogId: existingLog?.id,
+        userId: profile.id,
+        commitmentId: uc.commitment.id,
         date: todayStr,
-        target_amount: uc.commitment.daily_target,
-        completed_amount: amount,
-        carry_over_from_previous: carryOver,
-        status: "pending",
+        targetAmount: uc.commitment.daily_target,
+        completedAmount: amount,
+        carryOver,
       });
 
-      if (error) {
-        toast.error("Failed to log progress");
+      // Update local state
+      if (existingLog) {
+        setLogs((prev) =>
+          prev.map((log) => (log.id === existingLog.id ? newLog : log))
+        );
       } else {
-        toast.success("Progress logged! Awaiting approval.");
+        setLogs((prev) => [...prev, newLog]);
       }
+
+      toast.success(existingLog ? "Progress updated! Awaiting approval." : "Progress logged! Awaiting approval.");
+      setAmounts((prev) => ({ ...prev, [uc.commitment.id]: 0 }));
+    } catch {
+      toast.error(existingLog ? "Failed to update log" : "Failed to log progress");
     }
-
-    setLoading((prev) => ({ ...prev, [uc.commitment.id]: false }));
-    setAmounts((prev) => ({ ...prev, [uc.commitment.id]: 0 }));
-
-    // Refresh the page to show updated data
-    window.location.reload();
   };
+
+  const isLoading = (commitmentId: string) =>
+    logProgressMutation.isPending &&
+    logProgressMutation.variables?.commitmentId === commitmentId;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -186,13 +174,21 @@ export function DailyCommitments({
                       <span>Progress</span>
                       <span>
                         {completed} / {totalDue} {uc.commitment.unit}
+                        {carryOver > 0 && (
+                          <span className="text-muted-foreground ml-1">
+                            ({uc.commitment.daily_target} + {carryOver})
+                          </span>
+                        )}
                       </span>
                     </div>
                     <Progress value={progress} className="h-2" />
                     {carryOver > 0 && (
-                      <p className="text-xs text-orange-500">
-                        +{carryOver} carry-over from previous day
-                      </p>
+                      <div className="text-xs text-orange-500 bg-orange-500/10 rounded-md px-2 py-1.5">
+                        <span className="font-medium">+{carryOver} carry-over penalty</span>
+                        <span className="text-orange-400 ml-1">
+                          (missed {Math.round(carryOver / uc.commitment.punishment_multiplier)} × {uc.commitment.punishment_multiplier}x)
+                        </span>
+                      </div>
                     )}
                   </div>
 
@@ -200,22 +196,24 @@ export function DailyCommitments({
                     <div className="flex gap-2">
                       <Input
                         type="number"
-                        placeholder={`${uc.commitment.unit} done`}
+                        placeholder={`${uc.commitment.unit} done (max ${totalDue})`}
                         min={0}
+                        max={totalDue}
                         value={amounts[uc.commitment.id] || ""}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
                           setAmounts((prev) => ({
                             ...prev,
-                            [uc.commitment.id]: parseInt(e.target.value) || 0,
-                          }))
-                        }
-                        className="flex-1"
+                            [uc.commitment.id]: Math.min(Math.max(0, val), totalDue),
+                          }));
+                        }}
+                        className="flex-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <Button
                         onClick={() => handleSubmit(uc)}
-                        disabled={loading[uc.commitment.id]}
+                        disabled={isLoading(uc.commitment.id)}
                       >
-                        {loading[uc.commitment.id] ? (
+                        {isLoading(uc.commitment.id) ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           "Log"

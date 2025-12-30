@@ -24,7 +24,7 @@ export async function sendInviteEmail({
 
   try {
     const { error } = await resend.emails.send({
-      from: "Daily Dues <noreply@resend.dev>", // Use your verified domain in production
+      from: "Daily Dues <noreply@daily-dues.area-51.cloud>",
       to,
       subject: `You're invited to join ${realmName} on Daily Dues`,
       html: `

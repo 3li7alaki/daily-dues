@@ -12,13 +12,14 @@ import {
   LogOut,
   Menu,
   Dumbbell,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,16 +38,22 @@ interface NavHeaderProps {
   profile: Profile;
 }
 
-const navItems = [
+// Nav items for regular users
+const userNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
+// Nav items for admins (no stats pages, just management)
 const adminNavItems = [
-  { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/admin/realms", label: "Realms", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/commitments", label: "Commitments", icon: Dumbbell },
   { href: "/admin/approvals", label: "Approvals", icon: ClipboardCheck },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export function NavHeader({ profile }: NavHeaderProps) {
@@ -62,17 +69,20 @@ export function NavHeader({ profile }: NavHeaderProps) {
     router.refresh();
   };
 
-  const allNavItems = isAdmin ? [...navItems, ...adminNavItems] : navItems;
+  const allNavItems = isAdmin ? adminNavItems : userNavItems;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center">
-        <div className="mr-4 hidden md:flex">
-          <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
+      <div className="container mx-auto flex h-14 items-center justify-between px-4">
+        {/* Logo - always visible */}
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard" className="flex items-center space-x-2">
             <Dumbbell className="h-6 w-6" />
             <span className="font-bold">Daily Dues</span>
           </Link>
-          <nav className="flex items-center space-x-6 text-sm font-medium">
+
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center space-x-6 text-sm font-medium ml-6">
             {allNavItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -97,78 +107,70 @@ export function NavHeader({ profile }: NavHeaderProps) {
           </nav>
         </div>
 
-        <Sheet>
-          <SheetTrigger asChild className="md:hidden">
-            <Button variant="ghost" size="icon">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-72">
-            <div className="flex items-center space-x-2 mb-8">
-              <Dumbbell className="h-6 w-6" />
-              <span className="font-bold">Daily Dues</span>
-            </div>
-            <nav className="flex flex-col space-y-4">
-              {allNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    }`}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </SheetContent>
-        </Sheet>
+        {/* Right side */}
+        <div className="flex items-center gap-2">
+          <AnimatedThemeToggler className="p-2 rounded-full hover:bg-muted transition-colors" />
 
-        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-          <div className="md:hidden">
-            <Link href="/dashboard" className="flex items-center space-x-2">
-              <Dumbbell className="h-6 w-6" />
-              <span className="font-bold">Daily Dues</span>
-            </Link>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <AnimatedThemeToggler className="p-2 rounded-full hover:bg-muted transition-colors" />
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback>
-                      {profile.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="flex items-center justify-start gap-2 p-2">
-                  <div className="flex flex-col space-y-1 leading-none">
-                    <p className="font-medium">{profile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {profile.email}
-                    </p>
-                  </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                <UserAvatar
+                  name={profile.name}
+                  avatarUrl={profile.avatar_url}
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="flex items-center justify-start gap-2 p-2">
+                <div className="flex flex-col space-y-1 leading-none">
+                  <p className="font-medium">{profile.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {profile.email}
+                  </p>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Mobile menu */}
+          <Sheet>
+            <SheetTrigger asChild className="md:hidden">
+              <Button variant="ghost" size="icon">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-72">
+              <div className="flex items-center space-x-2 mb-8">
+                <Dumbbell className="h-6 w-6" />
+                <span className="font-bold">Daily Dues</span>
+              </div>
+              <nav className="flex flex-col space-y-2">
+                {allNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted"
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>

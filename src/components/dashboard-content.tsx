@@ -15,6 +15,9 @@ interface UserCommitmentWithDetails {
   user_id: string;
   commitment_id: string;
   pending_carry_over: number;
+  total_completed: number;
+  current_streak: number;
+  best_streak: number;
   assigned_at: string;
   commitment: Commitment;
 }
@@ -76,6 +79,8 @@ export function DashboardContent({
     );
   }
 
+  const isAdmin = profile.role === "admin";
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -84,7 +89,9 @@ export function DashboardContent({
             Welcome back, {profile.name.split(" ")[0]}!
           </h1>
           <p className="text-muted-foreground">
-            {hasWorkToday
+            {isAdmin
+              ? "Manage your realms and users from the admin panel."
+              : hasWorkToday
               ? "Here are your commitments for today."
               : filteredCommitments.length === 0
               ? "No commitments assigned in this realm."
@@ -94,7 +101,7 @@ export function DashboardContent({
         {realms.length > 1 && <UserRealmSwitcher />}
       </div>
 
-      {currentRealm && (
+      {currentRealm && !isAdmin && (
         <RealmStats
           realm={currentRealm}
           completedUsers={currentStats.completedUsers}
@@ -104,14 +111,18 @@ export function DashboardContent({
 
       <QuoteCard />
 
-      <StatsCards profile={profile} />
+      {!isAdmin && (
+        <>
+          <StatsCards userCommitments={filteredCommitments} />
 
-      <DailyCommitments
-        profile={profile}
-        userCommitments={filteredCommitments}
-        todayLogs={filteredLogs}
-        today={todayDate}
-      />
+          <DailyCommitments
+            profile={profile}
+            userCommitments={filteredCommitments}
+            todayLogs={filteredLogs}
+            today={todayDate}
+          />
+        </>
+      )}
     </div>
   );
 }

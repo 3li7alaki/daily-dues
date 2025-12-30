@@ -1,20 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/supabase/proxy";
 import { ApprovalsManager } from "@/components/admin/approvals-manager";
 
 export default async function AdminApprovalsPage() {
   await requireAdmin();
-  const supabase = await createClient();
-
-  const { data: logs } = await supabase
-    .from("daily_logs")
-    .select(`
-      *,
-      user:profiles!daily_logs_user_id_fkey(*),
-      commitment:commitments(*)
-    `)
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
 
   return (
     <div className="space-y-6">
@@ -25,7 +13,7 @@ export default async function AdminApprovalsPage() {
         </p>
       </div>
 
-      <ApprovalsManager logs={logs || []} />
+      <ApprovalsManager />
     </div>
   );
 }
