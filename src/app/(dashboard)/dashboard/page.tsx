@@ -76,13 +76,13 @@ export default async function DashboardPage() {
       continue;
     }
 
-    // Get users who have at least one commitment assigned in this realm
-    const { data: usersWithCommitments } = await supabase
-      .from("user_commitments")
+    // Get all users in this realm
+    const { data: realmUsers } = await supabase
+      .from("user_realms")
       .select("user_id")
-      .in("commitment_id", commitmentIds);
+      .eq("realm_id", realm.id);
 
-    const uniqueUserIds = [...new Set(usersWithCommitments?.map((uc) => uc.user_id) || [])];
+    const uniqueUserIds = realmUsers?.map((ur) => ur.user_id) || [];
 
     if (uniqueUserIds.length === 0) {
       realmStats[realm.id] = { totalUsers: 0, completedUsers: 0 };

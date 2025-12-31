@@ -268,6 +268,11 @@ export function useApproveLog() {
       log: LogWithRelations;
       approved: boolean;
     }) => {
+      // Guard: only process pending logs to prevent double-counting
+      if (log.status !== "pending") {
+        throw new Error("Log has already been processed");
+      }
+
       const { data: { user: admin } } = await supabase.auth.getUser();
 
       // Update log status
@@ -278,7 +283,8 @@ export function useApproveLog() {
           reviewed_by: admin!.id,
           reviewed_at: new Date().toISOString(),
         })
-        .eq("id", log.id);
+        .eq("id", log.id)
+        .eq("status", "pending"); // Extra safety: only update if still pending
 
       if (error) throw error;
 
@@ -298,7 +304,7 @@ export function useApproveLog() {
         const missed = Math.max(0, totalDue - completed);
 
         if (completed >= totalDue) {
-          // Full completion - increment streak, add to total
+          // Full completion - increment streak and add reps to total
           const newStreak = userCommitment.current_streak + 1;
           await supabase
             .from("user_commitments")
@@ -311,7 +317,7 @@ export function useApproveLog() {
             .eq("user_id", log.user_id)
             .eq("commitment_id", log.commitment_id);
         } else {
-          // Partial completion - reset streak, add carry over
+          // Partial completion - reset streak, add reps to total, add carry over
           const carryOver = calculateCarryOver(
             missed,
             log.commitment.punishment_multiplier

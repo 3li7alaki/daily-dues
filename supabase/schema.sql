@@ -39,9 +39,6 @@ CREATE TABLE profiles (
     name TEXT NOT NULL,
     role user_role DEFAULT 'user',
     avatar_url TEXT,
-    total_completed INTEGER DEFAULT 0,
-    current_streak INTEGER DEFAULT 0,
-    best_streak INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -93,6 +90,7 @@ CREATE TABLE user_commitments (
     user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     commitment_id UUID NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
     pending_carry_over INTEGER DEFAULT 0,
+    total_completed INTEGER DEFAULT 0,
     current_streak INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
     assigned_at TIMESTAMPTZ DEFAULT NOW(),
@@ -339,7 +337,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- End of day processing function
--- Processes all user commitments: creates missing logs, calculates carry-over, updates streaks
+-- Processes all user commitments: creates missing logs, calculates carry-over
+-- Note: Streaks are updated on approval, not here
 CREATE OR REPLACE FUNCTION process_end_of_day(p_date DATE DEFAULT CURRENT_DATE)
 RETURNS void AS $$
 DECLARE
@@ -351,11 +350,6 @@ DECLARE
     completed INTEGER;
     missed INTEGER;
     new_carry_over INTEGER;
-    commitment_completed BOOLEAN;
-    user_completed_all BOOLEAN;
-    current_user_id UUID;
-    user_commitment_count INTEGER;
-    user_completed_count INTEGER;
 BEGIN
     -- Get day of week (0 = Sunday, 1 = Monday, etc.)
     day_of_week := EXTRACT(DOW FROM p_date)::INTEGER;
@@ -417,76 +411,19 @@ BEGIN
             END IF;
         END IF;
 
-        -- Calculate missed amount and new carry-over
+        -- Calculate carry-over (streaks are updated on approval, not here)
         missed := GREATEST(0, total_due - completed);
 
         IF missed > 0 THEN
             new_carry_over := (missed * uc.punishment_multiplier)::INTEGER;
-            commitment_completed := false;
         ELSE
             new_carry_over := 0;
-            commitment_completed := true;
         END IF;
 
-        -- Update user_commitment with new carry-over and streak
-        IF commitment_completed THEN
-            UPDATE user_commitments
-            SET
-                pending_carry_over = new_carry_over,
-                current_streak = uc.uc_current_streak + 1,
-                best_streak = GREATEST(uc.uc_best_streak, uc.uc_current_streak + 1)
-            WHERE id = uc.uc_id;
-        ELSE
-            UPDATE user_commitments
-            SET
-                pending_carry_over = new_carry_over,
-                current_streak = 0
-            WHERE id = uc.uc_id;
-        END IF;
-    END LOOP;
-
-    -- Update global streaks on profiles
-    FOR current_user_id IN
-        SELECT DISTINCT user_id FROM user_commitments
-    LOOP
-        -- Count active commitments for today
-        SELECT COUNT(*) INTO user_commitment_count
-        FROM user_commitments uc
-        JOIN commitments c ON c.id = uc.commitment_id
-        WHERE uc.user_id = current_user_id
-          AND c.is_active = true
-          AND day_of_week = ANY(c.active_days);
-
-        -- Skip if user has no active commitments today
-        IF user_commitment_count = 0 THEN
-            CONTINUE;
-        END IF;
-
-        -- Count completed commitments (approved logs where completed >= due)
-        SELECT COUNT(*) INTO user_completed_count
-        FROM daily_logs dl
-        JOIN user_commitments uc ON uc.user_id = dl.user_id AND uc.commitment_id = dl.commitment_id
-        JOIN commitments c ON c.id = dl.commitment_id
-        WHERE dl.user_id = current_user_id
-          AND dl.date = p_date
-          AND dl.status = 'approved'
-          AND dl.completed_amount >= (c.daily_target + dl.carry_over_from_previous);
-
-        -- Update global streak
-        IF user_completed_count >= user_commitment_count THEN
-            -- User completed all commitments
-            UPDATE profiles
-            SET
-                current_streak = current_streak + 1,
-                best_streak = GREATEST(best_streak, current_streak + 1),
-                total_completed = total_completed + user_completed_count
-            WHERE id = current_user_id;
-        ELSE
-            -- User missed at least one commitment
-            UPDATE profiles
-            SET current_streak = 0
-            WHERE id = current_user_id;
-        END IF;
+        -- Update carry-over ONLY (streaks updated on approval)
+        UPDATE user_commitments
+        SET pending_carry_over = new_carry_over
+        WHERE id = uc.uc_id;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
