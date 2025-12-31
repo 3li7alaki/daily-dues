@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Flame, Target, Medal, Share2, Copy, Check, AlertTriangle } from "lucide-react";
+import {
+  Trophy,
+  Flame,
+  Target,
+  Medal,
+  Share2,
+  Copy,
+  Check,
+  AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -65,7 +74,10 @@ function getRankTitle(streak: number): string {
   return "Novice";
 }
 
-export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps) {
+export function LeaderboardTable({
+  entries,
+  commitment,
+}: LeaderboardTableProps) {
   const [copied, setCopied] = useState(false);
 
   const unit = commitment?.unit || "";
@@ -114,7 +126,9 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
           <Trophy className="h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold mb-2">No entries yet</h3>
           <p className="text-muted-foreground">
-            {commitment ? `No one has started ${commitment.name} yet!` : "Select a commitment to see the leaderboard."}
+            {commitment
+              ? `No one has started ${commitment.name} yet!`
+              : "Select a commitment to see the leaderboard."}
           </p>
         </CardContent>
       </Card>
@@ -177,19 +191,19 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: index * 0.1 }}
             >
-              <Card
-                className={`bg-gradient-to-br ${bgColors[index]} border-2`}
-              >
+              <Card className={`bg-gradient-to-br ${bgColors[index]} border-2`}>
                 <CardHeader className="text-center pb-2">
-                  <div className="flex justify-center mb-2">
-                    {getRankIcon(rank)}
+                  <div className="relative">
+                    <div className="p-1 rounded-full flex items-center justify-center absolute left-[57%] -top-2 transform -translate-x-1/2 z-10 mb-2">
+                      {getRankIcon(rank)}
+                    </div>
+                    <UserAvatar
+                      name={entry.user.name}
+                      avatarUrl={entry.user.avatar_url}
+                      className="h-16 w-16 mx-auto mb-2"
+                      fallbackClassName="text-xl"
+                    />
                   </div>
-                  <UserAvatar
-                    name={entry.user.name}
-                    avatarUrl={entry.user.avatar_url}
-                    className="h-16 w-16 mx-auto mb-2"
-                    fallbackClassName="text-xl"
-                  />
                   <CardTitle className="text-lg">{entry.user.name}</CardTitle>
                   <p className="text-xs text-muted-foreground">
                     {getRankTitle(entry.current_streak)}
@@ -200,14 +214,18 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
                     <div>
                       <div className="flex items-center justify-center gap-1">
                         <Flame className="h-4 w-4 text-orange-500" />
-                        <span className="font-bold">{entry.current_streak}</span>
+                        <span className="font-bold">
+                          {entry.current_streak}
+                        </span>
                       </div>
                       <p className="text-xs text-muted-foreground">Streak</p>
                     </div>
                     <div>
                       <div className="flex items-center justify-center gap-1">
                         <Target className="h-4 w-4 text-green-500" />
-                        <span className="font-bold">{entry.total_completed}</span>
+                        <span className="font-bold">
+                          {entry.total_completed}
+                        </span>
                       </div>
                       <p className="text-xs text-muted-foreground">{unit}</p>
                     </div>
@@ -215,7 +233,9 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
                   {debt > 0 && (
                     <div className="flex items-center justify-center gap-1 text-xs text-red-500 bg-red-500/10 rounded-md py-1">
                       <AlertTriangle className="h-3 w-3" />
-                      <span>{debt} {unit} debt</span>
+                      <span>
+                        {debt} {unit} debt
+                      </span>
                     </div>
                   )}
                 </CardContent>
@@ -239,7 +259,9 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
                   <TableHead>Name</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead className="text-right">Streak</TableHead>
-                  <TableHead className="text-right">{unit || "Total"}</TableHead>
+                  <TableHead className="text-right">
+                    {unit || "Total"}
+                  </TableHead>
                   <TableHead className="text-right">Debt</TableHead>
                 </TableRow>
               </TableHeader>
@@ -273,7 +295,9 @@ export function LeaderboardTable({ entries, commitment }: LeaderboardTableProps)
                       </TableCell>
                       <TableCell className="text-right">
                         {debt > 0 ? (
-                          <span className="text-red-500 font-medium">{debt}</span>
+                          <span className="text-red-500 font-medium">
+                            {debt}
+                          </span>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}

@@ -68,7 +68,7 @@ const defaultForm: CommitmentForm = {
   name: "",
   description: "",
   daily_target: 10,
-  unit: "reps",
+  unit: "Reps",
   active_days: BAHRAIN_WORK_DAYS,
   punishment_multiplier: 2,
 };
@@ -250,7 +250,7 @@ export function CommitmentsManager() {
                   <Label htmlFor="unit">Unit</Label>
                   <Input
                     id="unit"
-                    placeholder="e.g., reps, pages"
+                    placeholder="e.g., Reps, pages"
                     value={form.unit}
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
                     required
