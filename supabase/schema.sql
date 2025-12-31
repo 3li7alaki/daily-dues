@@ -158,10 +158,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Helper function to get user's realm IDs (bypasses RLS to avoid circular dependency)
+CREATE OR REPLACE FUNCTION get_user_realm_ids()
+RETURNS SETOF UUID
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+    SELECT realm_id FROM user_realms WHERE user_id = auth.uid();
+$$;
+
 -- Realms policies
 CREATE POLICY "Users can view their realms" ON realms
     FOR SELECT USING (
-        id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
+        id IN (SELECT get_user_realm_ids())
         OR is_admin()
     );
 
@@ -177,7 +187,7 @@ CREATE POLICY "Admins can view all profiles" ON profiles
 
 CREATE POLICY "Users can view profiles in their realms" ON profiles
     FOR SELECT USING (
-        id IN (SELECT user_id FROM user_realms WHERE realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid()))
+        id IN (SELECT user_id FROM user_realms WHERE realm_id IN (SELECT get_user_realm_ids()))
     );
 
 CREATE POLICY "Users can update own profile" ON profiles
@@ -189,7 +199,7 @@ CREATE POLICY "Allow insert for authenticated users" ON profiles
 -- User realms policies
 CREATE POLICY "Users can view members in their realms" ON user_realms
     FOR SELECT USING (
-        realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
+        realm_id IN (SELECT get_user_realm_ids())
         OR is_admin()
     );
 
@@ -209,7 +219,7 @@ CREATE POLICY "Anyone can read invites for registration" ON invites
 -- Commitments policies
 CREATE POLICY "Users can view commitments in their realms" ON commitments
     FOR SELECT USING (
-        realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
+        realm_id IN (SELECT get_user_realm_ids())
         OR is_admin()
     );
 
@@ -219,11 +229,7 @@ CREATE POLICY "Admins can manage commitments" ON commitments
 -- User commitments policies
 CREATE POLICY "Users can view commitments in their realms" ON user_commitments
     FOR SELECT USING (
-        commitment_id IN (
-            SELECT c.id FROM commitments c
-            JOIN user_realms ur ON ur.realm_id = c.realm_id
-            WHERE ur.user_id = auth.uid()
-        )
+        commitment_id IN (SELECT id FROM commitments WHERE realm_id IN (SELECT get_user_realm_ids()))
         OR is_admin()
     );
 
@@ -233,11 +239,7 @@ CREATE POLICY "Admins can manage user commitments" ON user_commitments
 -- Daily logs policies
 CREATE POLICY "Users can view logs in their realms" ON daily_logs
     FOR SELECT USING (
-        commitment_id IN (
-            SELECT c.id FROM commitments c
-            JOIN user_realms ur ON ur.realm_id = c.realm_id
-            WHERE ur.user_id = auth.uid()
-        )
+        commitment_id IN (SELECT id FROM commitments WHERE realm_id IN (SELECT get_user_realm_ids()))
         OR is_admin()
     );
 
