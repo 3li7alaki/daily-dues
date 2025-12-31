@@ -36,7 +36,7 @@ export async function getPendingApprovals(
 
   const { data, error } = await adminClient
     .from("daily_logs")
-    .select("*, user:profiles(*), commitment:commitments(*)")
+    .select("*, user:profiles!daily_logs_user_id_fkey(*), commitment:commitments(*)")
     .eq("status", "pending")
     .order("created_at", { ascending: false });
 
