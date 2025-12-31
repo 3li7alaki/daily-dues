@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { calculateCarryOver } from "@/lib/carry-over";
+import { getPendingApprovals, type LogWithRelations } from "@/app/actions/approvals";
 import type {
   Profile,
   Realm,
@@ -142,31 +143,13 @@ export function useDailyLogs(userId: string, date: string) {
   });
 }
 
-// Pending Approvals
-interface LogWithRelations extends DailyLog {
-  user: Profile;
-  commitment: Commitment;
-  user_commitment?: UserCommitment;
-}
+// Pending Approvals - uses server action to bypass RLS
+export { type LogWithRelations } from "@/app/actions/approvals";
 
 export function usePendingApprovals(realmId?: string) {
-  const supabase = createClient();
   return useQuery({
     queryKey: queryKeys.pendingApprovals(realmId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("daily_logs")
-        .select("*, user:profiles(*), commitment:commitments(*)")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-
-      let logs = data as LogWithRelations[];
-      if (realmId) {
-        logs = logs.filter((log) => log.commitment.realm_id === realmId);
-      }
-      return logs;
-    },
+    queryFn: () => getPendingApprovals(realmId),
   });
 }
 
