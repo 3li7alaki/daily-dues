@@ -168,8 +168,7 @@ export function useLeaderboard(commitmentId?: string) {
       // Get user_commitments with user and commitment info
       const { data, error } = await supabase
         .from("user_commitments")
-        .select("*, user:profiles(*), commitment:commitments(*)")
-        .order("current_streak", { ascending: false });
+        .select("*, user:profiles(*), commitment:commitments(*)");
 
       if (error) throw error;
 
@@ -182,6 +181,33 @@ export function useLeaderboard(commitmentId?: string) {
 
       // Only include entries where user has role 'user' (not admin)
       entries = entries.filter((e) => e.user.role === "user");
+
+      // Get today's logs to sort by earliest completion when scores are tied
+      const today = new Date().toISOString().split("T")[0];
+      const { data: todayLogs } = await supabase
+        .from("daily_logs")
+        .select("user_id, commitment_id, reviewed_at")
+        .eq("date", today)
+        .eq("status", "approved");
+
+      // Create a map of user+commitment to reviewed_at time
+      const completionTimeMap = new Map<string, string>();
+      todayLogs?.forEach((log) => {
+        const key = `${log.user_id}-${log.commitment_id}`;
+        completionTimeMap.set(key, log.reviewed_at || "");
+      });
+
+      // Sort by current_streak desc, then by earliest completion time
+      entries.sort((a, b) => {
+        // Primary sort: current_streak descending
+        if (b.current_streak !== a.current_streak) {
+          return b.current_streak - a.current_streak;
+        }
+        // Secondary sort: earliest completion time (who finished first today)
+        const timeA = completionTimeMap.get(`${a.user_id}-${a.commitment_id}`) || "9999";
+        const timeB = completionTimeMap.get(`${b.user_id}-${b.commitment_id}`) || "9999";
+        return timeA.localeCompare(timeB);
+      });
 
       return entries;
     },

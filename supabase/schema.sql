@@ -187,11 +187,11 @@ CREATE POLICY "Allow insert for authenticated users" ON profiles
     FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- User realms policies
-CREATE POLICY "Users can view own realm memberships" ON user_realms
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Admins can view all realm memberships" ON user_realms
-    FOR SELECT USING (is_admin());
+CREATE POLICY "Users can view members in their realms" ON user_realms
+    FOR SELECT USING (
+        realm_id IN (SELECT realm_id FROM user_realms WHERE user_id = auth.uid())
+        OR is_admin()
+    );
 
 CREATE POLICY "Admins can manage realm memberships" ON user_realms
     FOR ALL USING (is_admin());
@@ -217,21 +217,29 @@ CREATE POLICY "Admins can manage commitments" ON commitments
     FOR ALL USING (is_admin());
 
 -- User commitments policies
-CREATE POLICY "Users can view own commitments" ON user_commitments
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Admins can view all user commitments" ON user_commitments
-    FOR SELECT USING (is_admin());
+CREATE POLICY "Users can view commitments in their realms" ON user_commitments
+    FOR SELECT USING (
+        commitment_id IN (
+            SELECT c.id FROM commitments c
+            JOIN user_realms ur ON ur.realm_id = c.realm_id
+            WHERE ur.user_id = auth.uid()
+        )
+        OR is_admin()
+    );
 
 CREATE POLICY "Admins can manage user commitments" ON user_commitments
     FOR ALL USING (is_admin());
 
 -- Daily logs policies
-CREATE POLICY "Users can view own logs" ON daily_logs
-    FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "Admins can view all logs" ON daily_logs
-    FOR SELECT USING (is_admin());
+CREATE POLICY "Users can view logs in their realms" ON daily_logs
+    FOR SELECT USING (
+        commitment_id IN (
+            SELECT c.id FROM commitments c
+            JOIN user_realms ur ON ur.realm_id = c.realm_id
+            WHERE ur.user_id = auth.uid()
+        )
+        OR is_admin()
+    );
 
 CREATE POLICY "Users can insert own logs" ON daily_logs
     FOR INSERT WITH CHECK (user_id = auth.uid());
