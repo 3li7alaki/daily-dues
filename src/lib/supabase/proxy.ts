@@ -52,6 +52,12 @@ export async function getProfile(): Promise<Profile | null> {
 export async function redirectIfAuthenticated() {
   const user = await getSession();
   if (user) {
-    redirect("/dashboard");
+    // Verify profile exists before redirecting to dashboard
+    const profile = await getProfile();
+    if (profile) {
+      redirect("/dashboard");
+    }
+    // If user exists but no profile, let them stay on auth page
+    // This prevents redirect loops when profile is missing
   }
 }
