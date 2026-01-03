@@ -13,6 +13,7 @@ import {
   Menu,
   Building2,
   BicepsFlexed,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +31,8 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
 import type { Profile } from "@/types/database";
@@ -52,6 +55,7 @@ const adminNavItems = [
   { href: "/admin/realms", label: "Realms", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/commitments", label: "Commitments", icon: BicepsFlexed },
+  { href: "/admin/holidays", label: "Holidays", icon: Calendar },
   { href: "/admin/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
@@ -145,10 +149,12 @@ export function NavHeader({ profile }: NavHeaderProps) {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-72 p-4">
-              <div className="flex items-center space-x-2 mb-8">
-                <BicepsFlexed className="h-6 w-6" />
-                <span className="font-bold">Daily Dues</span>
-              </div>
+              <SheetHeader>
+                <SheetTitle className="flex items-center space-x-2 mb-4">
+                  <BicepsFlexed className="h-6 w-6" />
+                  <span className="font-bold">Daily Dues</span>
+                </SheetTitle>
+              </SheetHeader>
               <nav className="flex flex-col space-y-2">
                 {allNavItems.map((item) => {
                   const Icon = item.icon;

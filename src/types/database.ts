@@ -245,6 +245,38 @@ export interface Database {
           updated_at?: string;
         };
       };
+      holidays: {
+        Row: {
+          id: string;
+          realm_id: string;
+          user_id: string | null;
+          date: string;
+          description: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          realm_id: string;
+          user_id?: string | null;
+          date: string;
+          description: string;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          realm_id?: string;
+          user_id?: string | null;
+          date?: string;
+          description?: string;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
@@ -266,3 +298,4 @@ export type Invite = Database["public"]["Tables"]["invites"]["Row"];
 export type Commitment = Database["public"]["Tables"]["commitments"]["Row"];
 export type UserCommitment = Database["public"]["Tables"]["user_commitments"]["Row"];
 export type DailyLog = Database["public"]["Tables"]["daily_logs"]["Row"];
+export type Holiday = Database["public"]["Tables"]["holidays"]["Row"];

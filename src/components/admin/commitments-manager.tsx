@@ -201,17 +201,17 @@ export function CommitmentsManager() {
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? "Edit Commitment" : "Create Commitment"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? "Update the commitment details"
+                : "Set up a new daily commitment for users"}
+            </DialogDescription>
+          </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Edit Commitment" : "Create Commitment"}
-              </DialogTitle>
-              <DialogDescription>
-                {editingId
-                  ? "Update the commitment details"
-                  : "Set up a new daily commitment for users"}
-              </DialogDescription>
-            </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
