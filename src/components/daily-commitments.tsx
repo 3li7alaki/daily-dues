@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Clock, Loader2, X, AlertCircle } from "lucide-react";
+import { Check, Clock, Loader2, X, AlertCircle, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
 
-import { useLogProgress } from "@/lib/queries";
+import { useLogProgress, useTodayIsHoliday } from "@/lib/queries";
 import { formatDateForDb, isWorkDay } from "@/lib/carry-over";
+import { useRealm } from "@/contexts/realm-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,8 +40,23 @@ export function DailyCommitments({
   const [amounts, setAmounts] = useState<Record<string, number>>({});
   const [logs, setLogs] = useState<DailyLog[]>(initialLogs);
   const todayStr = formatDateForDb(today);
+  const { currentRealm } = useRealm();
 
   const logProgressMutation = useLogProgress();
+  const { data: todayHoliday, isLoading: holidayLoading } = useTodayIsHoliday(
+    currentRealm?.id,
+    profile.id,
+    todayStr
+  );
+
+  // Debug logging
+  console.log("Holiday check:", {
+    realmId: currentRealm?.id,
+    userId: profile.id,
+    date: todayStr,
+    holiday: todayHoliday,
+    loading: holidayLoading,
+  });
 
   const getLogForCommitment = (commitmentId: string) =>
     logs.find((log) => log.commitment_id === commitmentId);
@@ -116,6 +132,30 @@ export function DailyCommitments({
         );
     }
   };
+
+  // Show holiday message if today is a holiday
+  if (todayHoliday && !holidayLoading) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+          <div className="rounded-full bg-green-500/10 p-4 mb-4">
+            <PartyPopper className="h-8 w-8 text-green-600" />
+          </div>
+          <h3 className="text-lg font-semibold mb-2">
+            {todayHoliday.description || "Holiday"}
+          </h3>
+          <p className="text-muted-foreground max-w-sm">
+            Today is a holiday - no logging needed! Enjoy your day off.
+          </p>
+          {todayHoliday.user_id && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Personal time off
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (activeToday.length === 0) {
     const hasCommitments = userCommitments.length > 0;

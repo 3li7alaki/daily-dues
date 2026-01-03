@@ -15,7 +15,7 @@ export function QuoteCard() {
       transition={{ duration: 0.5 }}
     >
       <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
-        <CardContent className="pt-6">
+        <CardContent className="p-5.5">
           <div className="flex gap-4">
             <Quote className="h-8 w-8 text-primary/40 flex-shrink-0 mt-1" />
             <div className="space-y-2">

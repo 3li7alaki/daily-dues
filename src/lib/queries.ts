@@ -10,6 +10,7 @@ import type {
   UserCommitment,
   DailyLog,
   UserRealm,
+  Holiday,
 } from "@/types/database";
 
 // Query Keys
@@ -25,6 +26,7 @@ export const queryKeys = {
   dailyLogs: (userId: string, date: string) => ["dailyLogs", userId, date] as const,
   pendingApprovals: (realmId?: string) => ["pendingApprovals", realmId] as const,
   leaderboard: (realmId?: string) => ["leaderboard", realmId] as const,
+  holidays: (realmId?: string) => ["holidays", realmId] as const,
 };
 
 // ============ Queries ============
@@ -212,6 +214,59 @@ export function useLeaderboard(commitmentId?: string) {
       return entries;
     },
     enabled: true,
+  });
+}
+
+// Holidays
+export function useHolidays(realmId?: string) {
+  const supabase = createClient();
+  return useQuery({
+    queryKey: queryKeys.holidays(realmId),
+    queryFn: async () => {
+      let query = supabase
+        .from("holidays")
+        .select("*, user:profiles!holidays_user_id_fkey(id, name, username, avatar_url), realm:realms(id, name)")
+        .order("date", { ascending: false });
+
+      if (realmId) {
+        query = query.eq("realm_id", realmId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as (Holiday & {
+        user: { id: string; name: string; username: string; avatar_url: string | null } | null;
+        realm: { id: string; name: string };
+      })[];
+    },
+  });
+}
+
+// Check if a specific date is a holiday for a user
+export function useTodayIsHoliday(realmId?: string, userId?: string, date?: string) {
+  const supabase = createClient();
+  return useQuery({
+    queryKey: [...queryKeys.holidays(realmId), "check", date, userId],
+    queryFn: async () => {
+      if (!realmId || !userId || !date) return null;
+
+      // Check for realm-wide holidays OR user-specific holidays
+      const { data, error } = await supabase
+        .from("holidays")
+        .select("id, description, user_id")
+        .eq("realm_id", realmId)
+        .eq("date", date);
+
+      if (error) throw error;
+
+      // Filter to find a holiday that applies to this user (realm-wide OR user-specific)
+      const applicableHoliday = data?.find(
+        (h: { user_id: string | null }) => h.user_id === null || h.user_id === userId
+      );
+
+      return applicableHoliday || null;
+    },
+    enabled: !!realmId && !!userId && !!date,
   });
 }
 
@@ -602,6 +657,49 @@ export function useAssignUserCommitments() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.userCommitments(variables.userId),
       });
+    },
+  });
+}
+
+// Create Holiday
+export function useCreateHoliday() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (holiday: {
+      realm_id: string;
+      user_id?: string | null;
+      date: string;
+      description: string;
+    }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("holidays")
+        .insert({ ...holiday, created_by: user!.id })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Holiday;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["holidays"] });
+    },
+  });
+}
+
+// Delete Holiday
+export function useDeleteHoliday() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("holidays").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["holidays"] });
     },
   });
 }

@@ -66,7 +66,7 @@ export function StatsCards({ userCommitments }: StatsCardsProps) {
             transition={{ duration: 0.3, delay: index * 0.1 }}
           >
             <Card>
-              <CardContent className="flex items-center gap-4 pt-6">
+              <CardContent className="flex items-center gap-4 p-5">
                 <div className={`p-3 rounded-full ${stat.bgColor}`}>
                   <Icon className={`h-6 w-6 ${stat.color}`} />
                 </div>

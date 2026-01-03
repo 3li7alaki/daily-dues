@@ -114,6 +114,20 @@ CREATE TABLE daily_logs (
     UNIQUE(user_id, commitment_id, date)
 );
 
+-- Holidays table (admin-managed)
+CREATE TABLE holidays (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    realm_id UUID NOT NULL REFERENCES realms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE, -- NULL = realm-wide holiday
+    date DATE NOT NULL,
+    description TEXT NOT NULL,
+    created_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Prevent duplicate holidays for the same user/realm/date combination
+    UNIQUE(realm_id, user_id, date)
+);
+
 -- Indexes for performance
 CREATE INDEX idx_profiles_username ON profiles(username);
 CREATE INDEX idx_profiles_role ON profiles(role);
@@ -126,6 +140,9 @@ CREATE INDEX idx_commitments_realm ON commitments(realm_id);
 CREATE INDEX idx_daily_logs_user_date ON daily_logs(user_id, date);
 CREATE INDEX idx_daily_logs_status ON daily_logs(status);
 CREATE INDEX idx_user_commitments_user ON user_commitments(user_id);
+CREATE INDEX idx_holidays_realm_date ON holidays(realm_id, date);
+CREATE INDEX idx_holidays_user_date ON holidays(user_id, date);
+CREATE INDEX idx_holidays_date ON holidays(date);
 
 -- Row Level Security (RLS)
 ALTER TABLE realms ENABLE ROW LEVEL SECURITY;
@@ -135,6 +152,7 @@ ALTER TABLE invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commitments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_commitments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE holidays ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to check if current user is admin (bypasses RLS)
 CREATE OR REPLACE FUNCTION is_admin()
@@ -252,6 +270,19 @@ CREATE POLICY "Users can update own pending or rejected logs" ON daily_logs
 CREATE POLICY "Admins can update any log" ON daily_logs
     FOR UPDATE USING (is_admin());
 
+CREATE POLICY "Admins can delete logs" ON daily_logs
+    FOR DELETE USING (is_admin());
+
+-- Holidays policies
+CREATE POLICY "Users can view holidays in their realms" ON holidays
+    FOR SELECT USING (
+        realm_id IN (SELECT get_user_realm_ids())
+        OR is_admin()
+    );
+
+CREATE POLICY "Admins can manage holidays" ON holidays
+    FOR ALL USING (is_admin());
+
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
@@ -276,6 +307,10 @@ CREATE TRIGGER commitments_updated_at
 
 CREATE TRIGGER daily_logs_updated_at
     BEFORE UPDATE ON daily_logs
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER holidays_updated_at
+    BEFORE UPDATE ON holidays
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- Make a user an admin (global, not tied to any realm)
@@ -346,6 +381,153 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Recalculate carry-over from a specific date forward
+-- Used when retroactive holidays are created
+CREATE OR REPLACE FUNCTION recalculate_carry_over_from_date(
+    p_user_id UUID,
+    p_commitment_id UUID,
+    p_start_date DATE
+)
+RETURNS void AS $$
+DECLARE
+    log_record RECORD;
+    current_carry_over INTEGER := 0;
+    total_due INTEGER;
+    completed INTEGER;
+    missed INTEGER;
+    punishment_mult DECIMAL;
+    is_holiday_date BOOLEAN;
+    realm_id_val UUID;
+BEGIN
+    -- Get commitment info
+    SELECT c.punishment_multiplier, c.realm_id
+    INTO punishment_mult, realm_id_val
+    FROM commitments c
+    JOIN user_commitments uc ON uc.commitment_id = c.id
+    WHERE uc.user_id = p_user_id AND uc.commitment_id = p_commitment_id;
+
+    -- If no user_commitment record exists, exit early (user not assigned to this commitment)
+    IF punishment_mult IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- Get carry-over from the day before start_date
+    SELECT COALESCE(carry_over_from_previous, 0) INTO current_carry_over
+    FROM daily_logs
+    WHERE user_id = p_user_id
+      AND commitment_id = p_commitment_id
+      AND date < p_start_date
+    ORDER BY date DESC
+    LIMIT 1;
+
+    -- If no previous log, check user_commitments initial state
+    IF current_carry_over IS NULL THEN
+        SELECT COALESCE(pending_carry_over, 0) INTO current_carry_over
+        FROM user_commitments
+        WHERE user_id = p_user_id AND commitment_id = p_commitment_id;
+    END IF;
+
+    -- Process all logs from start_date forward in chronological order
+    FOR log_record IN
+        SELECT dl.*, c.daily_target
+        FROM daily_logs dl
+        JOIN commitments c ON c.id = dl.commitment_id
+        WHERE dl.user_id = p_user_id
+          AND dl.commitment_id = p_commitment_id
+          AND dl.date >= p_start_date
+        ORDER BY dl.date ASC
+    LOOP
+        -- Check if this date is a holiday
+        SELECT EXISTS(
+            SELECT 1 FROM holidays
+            WHERE realm_id = realm_id_val
+              AND date = log_record.date
+              AND (user_id IS NULL OR user_id = p_user_id)
+        ) INTO is_holiday_date;
+
+        IF is_holiday_date THEN
+            -- Delete the log for holiday dates (shouldn't exist)
+            DELETE FROM daily_logs WHERE id = log_record.id;
+            -- Carry-over stays the same, doesn't change
+            CONTINUE;
+        END IF;
+
+        -- Update the log's carry_over_from_previous
+        UPDATE daily_logs
+        SET carry_over_from_previous = current_carry_over
+        WHERE id = log_record.id;
+
+        -- Calculate new carry-over based on this log
+        total_due := log_record.daily_target + current_carry_over;
+        completed := COALESCE(log_record.completed_amount, 0);
+        missed := GREATEST(0, total_due - completed);
+
+        IF missed > 0 THEN
+            current_carry_over := (missed * punishment_mult)::INTEGER;
+        ELSE
+            current_carry_over := 0;
+        END IF;
+    END LOOP;
+
+    -- Update user_commitments with final carry-over
+    UPDATE user_commitments
+    SET pending_carry_over = current_carry_over
+    WHERE user_id = p_user_id AND commitment_id = p_commitment_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to recalculate carry-over when a retroactive holiday is created
+CREATE OR REPLACE FUNCTION handle_retroactive_holiday()
+RETURNS TRIGGER AS $$
+DECLARE
+    uc RECORD;
+BEGIN
+    -- Only process if the holiday is for a past date
+    IF NEW.date >= CURRENT_DATE THEN
+        RETURN NEW;
+    END IF;
+
+    -- Recalculate carry-over for all affected users
+    IF NEW.user_id IS NULL THEN
+        -- Realm-wide holiday: recalculate for all users in this realm
+        FOR uc IN
+            SELECT DISTINCT uc.user_id, uc.commitment_id
+            FROM user_commitments uc
+            JOIN commitments c ON c.id = uc.commitment_id
+            WHERE c.realm_id = NEW.realm_id
+        LOOP
+            PERFORM recalculate_carry_over_from_date(
+                uc.user_id,
+                uc.commitment_id,
+                NEW.date
+            );
+        END LOOP;
+    ELSE
+        -- User-specific holiday: recalculate for this user only
+        FOR uc IN
+            SELECT DISTINCT uc.commitment_id
+            FROM user_commitments uc
+            JOIN commitments c ON c.id = uc.commitment_id
+            WHERE uc.user_id = NEW.user_id
+              AND c.realm_id = NEW.realm_id
+        LOOP
+            PERFORM recalculate_carry_over_from_date(
+                NEW.user_id,
+                uc.commitment_id,
+                NEW.date
+            );
+        END LOOP;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_retroactive_holiday
+    AFTER INSERT ON holidays
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_retroactive_holiday();
+
 -- End of day processing function
 -- Processes all user commitments: creates missing logs, calculates carry-over
 -- Note: Streaks are updated on approval, not here
@@ -356,6 +538,7 @@ DECLARE
     existing_log RECORD;
     day_of_week INTEGER;
     is_active_day BOOLEAN;
+    is_holiday BOOLEAN;
     total_due INTEGER;
     completed INTEGER;
     missed INTEGER;
@@ -375,7 +558,8 @@ BEGIN
             uc.best_streak as uc_best_streak,
             c.daily_target,
             c.active_days,
-            c.punishment_multiplier
+            c.punishment_multiplier,
+            c.realm_id
         FROM user_commitments uc
         JOIN commitments c ON c.id = uc.commitment_id
         WHERE c.is_active = true
@@ -385,6 +569,19 @@ BEGIN
 
         IF NOT is_active_day THEN
             CONTINUE; -- Skip non-active days
+        END IF;
+
+        -- Check if today is a holiday for this user
+        -- Holiday is either realm-wide (user_id IS NULL) OR user-specific
+        SELECT EXISTS(
+            SELECT 1 FROM holidays
+            WHERE realm_id = uc.realm_id
+              AND date = p_date
+              AND (user_id IS NULL OR user_id = uc.user_id)
+        ) INTO is_holiday;
+
+        IF is_holiday THEN
+            CONTINUE; -- Skip holidays - no processing at all
         END IF;
 
         -- Get existing log for today

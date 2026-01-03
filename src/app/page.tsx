@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Dumbbell } from "lucide-react";
+import { BicepsFlexed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QuoteCard } from "@/components/quote-card";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -11,7 +11,7 @@ export default function HomePage() {
       <header className="w-full border-b bg-background/50 backdrop-blur-sm">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-2">
-            <Dumbbell className="h-6 w-6" />
+            <BicepsFlexed className="h-6 w-6" />
             <span className="font-bold text-xl">Daily Dues</span>
           </div>
           <div className="flex items-center gap-3">
