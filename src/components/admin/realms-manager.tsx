@@ -196,17 +196,17 @@ export function RealmsManager() {
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? "Edit Realm" : "Create Realm"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? "Update the realm details"
+                : "Create a new realm for your team or organization"}
+            </DialogDescription>
+          </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Edit Realm" : "Create Realm"}
-              </DialogTitle>
-              <DialogDescription>
-                {editingId
-                  ? "Update the realm details"
-                  : "Create a new realm for your team or organization"}
-              </DialogDescription>
-            </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Realm Name</Label>

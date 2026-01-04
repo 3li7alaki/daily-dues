@@ -68,7 +68,7 @@ const defaultForm: CommitmentForm = {
   name: "",
   description: "",
   daily_target: 10,
-  unit: "reps",
+  unit: "Reps",
   active_days: BAHRAIN_WORK_DAYS,
   punishment_multiplier: 2,
 };
@@ -201,17 +201,17 @@ export function CommitmentsManager() {
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? "Edit Commitment" : "Create Commitment"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? "Update the commitment details"
+                : "Set up a new daily commitment for users"}
+            </DialogDescription>
+          </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {editingId ? "Edit Commitment" : "Create Commitment"}
-              </DialogTitle>
-              <DialogDescription>
-                {editingId
-                  ? "Update the commitment details"
-                  : "Set up a new daily commitment for users"}
-              </DialogDescription>
-            </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
@@ -250,7 +250,7 @@ export function CommitmentsManager() {
                   <Label htmlFor="unit">Unit</Label>
                   <Input
                     id="unit"
-                    placeholder="e.g., reps, pages"
+                    placeholder="e.g., Reps, pages"
                     value={form.unit}
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
                     required

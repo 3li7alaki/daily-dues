@@ -11,8 +11,9 @@ import {
   Settings,
   LogOut,
   Menu,
-  Dumbbell,
   Building2,
+  BicepsFlexed,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +31,8 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
 import type { Profile } from "@/types/database";
@@ -51,7 +54,8 @@ const adminNavItems = [
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/admin/realms", label: "Realms", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/commitments", label: "Commitments", icon: Dumbbell },
+  { href: "/admin/commitments", label: "Commitments", icon: BicepsFlexed },
+  { href: "/admin/holidays", label: "Holidays", icon: Calendar },
   { href: "/admin/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
@@ -77,7 +81,7 @@ export function NavHeader({ profile }: NavHeaderProps) {
         {/* Logo - always visible */}
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <Dumbbell className="h-6 w-6" />
+            <BicepsFlexed className="h-6 w-6" />
             <span className="font-bold">Daily Dues</span>
           </Link>
 
@@ -130,8 +134,8 @@ export function NavHeader({ profile }: NavHeaderProps) {
                 </div>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-500 font-bold">
+                <LogOut className="mr-1 h-5 w-5 text-red-500" />
                 Log out
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -144,11 +148,13 @@ export function NavHeader({ profile }: NavHeaderProps) {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-72">
-              <div className="flex items-center space-x-2 mb-8">
-                <Dumbbell className="h-6 w-6" />
-                <span className="font-bold">Daily Dues</span>
-              </div>
+            <SheetContent side="right" className="w-72 p-4">
+              <SheetHeader>
+                <SheetTitle className="flex items-center space-x-2 mb-4">
+                  <BicepsFlexed className="h-6 w-6" />
+                  <span className="font-bold">Daily Dues</span>
+                </SheetTitle>
+              </SheetHeader>
               <nav className="flex flex-col space-y-2">
                 {allNavItems.map((item) => {
                   const Icon = item.icon;
