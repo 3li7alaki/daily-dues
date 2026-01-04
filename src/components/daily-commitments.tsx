@@ -48,16 +48,7 @@ export function DailyCommitments({
     profile.id,
     todayStr
   );
-
-  // Debug logging
-  console.log("Holiday check:", {
-    realmId: currentRealm?.id,
-    userId: profile.id,
-    date: todayStr,
-    holiday: todayHoliday,
-    loading: holidayLoading,
-  });
-
+  
   const getLogForCommitment = (commitmentId: string) =>
     logs.find((log) => log.commitment_id === commitmentId);
 

@@ -123,9 +123,7 @@ CREATE TABLE holidays (
     description TEXT NOT NULL,
     created_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    -- Prevent duplicate holidays for the same user/realm/date combination
-    UNIQUE(realm_id, user_id, date)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Indexes for performance
@@ -143,6 +141,11 @@ CREATE INDEX idx_user_commitments_user ON user_commitments(user_id);
 CREATE INDEX idx_holidays_realm_date ON holidays(realm_id, date);
 CREATE INDEX idx_holidays_user_date ON holidays(user_id, date);
 CREATE INDEX idx_holidays_date ON holidays(date);
+
+-- Unique constraints to prevent duplicate holidays
+-- Separate indexes for realm-wide and user-specific holidays (NULL ≠ NULL in SQL)
+CREATE UNIQUE INDEX idx_holidays_unique_realm_wide ON holidays(realm_id, date) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX idx_holidays_unique_user_specific ON holidays(realm_id, user_id, date) WHERE user_id IS NOT NULL;
 
 -- Row Level Security (RLS)
 ALTER TABLE realms ENABLE ROW LEVEL SECURITY;
@@ -550,18 +553,18 @@ BEGIN
     -- Process each user_commitment
     FOR uc IN
         SELECT
-            uc.id as uc_id,
-            uc.user_id,
-            uc.commitment_id,
-            uc.pending_carry_over,
-            uc.current_streak as uc_current_streak,
-            uc.best_streak as uc_best_streak,
+            user_comm.id as uc_id,
+            user_comm.user_id,
+            user_comm.commitment_id,
+            user_comm.pending_carry_over,
+            user_comm.current_streak as uc_current_streak,
+            user_comm.best_streak as uc_best_streak,
             c.daily_target,
             c.active_days,
             c.punishment_multiplier,
             c.realm_id
-        FROM user_commitments uc
-        JOIN commitments c ON c.id = uc.commitment_id
+        FROM user_commitments user_comm
+        JOIN commitments c ON c.id = user_comm.commitment_id
         WHERE c.is_active = true
     LOOP
         -- Check if today is an active day for this commitment

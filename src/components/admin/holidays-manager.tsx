@@ -103,16 +103,6 @@ export function HolidaysManager() {
       return;
     }
 
-    // Prevent creating holidays for past dates
-    const selectedDate = new Date(form.date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDate < today) {
-      toast.error("Holidays can only be created for today or future dates");
-      return;
-    }
-
     try {
       await createMutation.mutateAsync({
         realm_id: currentRealm.id,
@@ -203,11 +193,10 @@ export function HolidaysManager() {
                   type="date"
                   value={form.date}
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  min={format(new Date(), "yyyy-MM-dd")}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Holidays can only be created for today or future dates
+                  Select any date to mark as a holiday
                 </p>
               </div>
               <div className="space-y-2">
