@@ -621,19 +621,23 @@ BEGIN
             END IF;
         END IF;
 
-        -- Calculate carry-over (streaks are updated on approval, not here)
+        -- Calculate carry-over and update streak if missed
         missed := GREATEST(0, total_due - completed);
 
         IF missed > 0 THEN
             new_carry_over := (missed * uc.punishment_multiplier)::INTEGER;
+            -- Reset streak to 0 when user misses their commitment
+            UPDATE user_commitments
+            SET pending_carry_over = new_carry_over,
+                current_streak = 0
+            WHERE id = uc.uc_id;
         ELSE
             new_carry_over := 0;
+            -- No change to streak - it gets incremented on approval
+            UPDATE user_commitments
+            SET pending_carry_over = new_carry_over
+            WHERE id = uc.uc_id;
         END IF;
-
-        -- Update carry-over ONLY (streaks updated on approval)
-        UPDATE user_commitments
-        SET pending_carry_over = new_carry_over
-        WHERE id = uc.uc_id;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
