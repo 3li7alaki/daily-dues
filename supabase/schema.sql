@@ -312,6 +312,34 @@ CREATE TRIGGER daily_logs_updated_at
     BEFORE UPDATE ON daily_logs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- Validate completed_amount to prevent submission of values exceeding the allowed maximum
+-- This is a security measure to enforce backend validation that frontend validation alone cannot guarantee
+CREATE OR REPLACE FUNCTION validate_completed_amount()
+RETURNS TRIGGER AS $$
+DECLARE
+    max_allowed INTEGER;
+BEGIN
+    -- Calculate the maximum allowed value: target_amount + carry_over_from_previous
+    max_allowed := NEW.target_amount + COALESCE(NEW.carry_over_from_previous, 0);
+
+    -- Ensure completed_amount is non-negative
+    IF NEW.completed_amount < 0 THEN
+        RAISE EXCEPTION 'completed_amount cannot be negative';
+    END IF;
+
+    -- Ensure completed_amount does not exceed the maximum allowed
+    IF NEW.completed_amount > max_allowed THEN
+        RAISE EXCEPTION 'completed_amount (%) exceeds maximum allowed (%)', NEW.completed_amount, max_allowed;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_daily_log_amount
+    BEFORE INSERT OR UPDATE ON daily_logs
+    FOR EACH ROW EXECUTE FUNCTION validate_completed_amount();
+
 CREATE TRIGGER holidays_updated_at
     BEFORE UPDATE ON holidays
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

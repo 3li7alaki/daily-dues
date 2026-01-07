@@ -1,7 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { calculateCarryOver } from "@/lib/carry-over";
 import { getPendingApprovals, type LogWithRelations } from "@/app/actions/approvals";
+import { logProgress, approveLog } from "@/app/actions/logs";
+import {
+  createCommitment as createCommitmentAction,
+  updateCommitment as updateCommitmentAction,
+  toggleCommitmentActive as toggleCommitmentActiveAction,
+  deleteCommitment as deleteCommitmentAction,
+} from "@/app/actions/commitments";
+import { assignUserCommitments as assignUserCommitmentsAction } from "@/app/actions/assignments";
+import {
+  createHoliday as createHolidayAction,
+  deleteHoliday as deleteHolidayAction,
+} from "@/app/actions/holidays";
+import {
+  createRealm as createRealmAction,
+  updateRealm as updateRealmAction,
+  deleteRealm as deleteRealmAction,
+} from "@/app/actions/realms";
 import type {
   Profile,
   Realm,
@@ -275,58 +291,32 @@ export function useTodayIsHoliday(realmId?: string, userId?: string, date?: stri
 // Create/Update Daily Log
 export function useLogProgress() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({
       existingLogId,
-      userId,
       commitmentId,
       date,
-      targetAmount,
       completedAmount,
-      carryOver,
     }: {
       existingLogId?: string;
       userId: string;
       commitmentId: string;
       date: string;
-      targetAmount: number;
       completedAmount: number;
-      carryOver: number;
     }) => {
-      if (existingLogId) {
-        const { data, error } = await supabase
-          .from("daily_logs")
-          .update({
-            completed_amount: completedAmount,
-            status: "pending",
-            reviewed_by: null,
-            reviewed_at: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingLogId)
-          .select()
-          .single();
-        if (error) throw error;
-        return data as DailyLog;
-      } else {
-        const { data, error } = await supabase
-          .from("daily_logs")
-          .insert({
-            user_id: userId,
-            commitment_id: commitmentId,
-            date,
-            target_amount: targetAmount,
-            completed_amount: completedAmount,
-            carry_over_from_previous: carryOver,
-            status: "pending",
-          })
-          .select()
-          .single();
-        if (error) throw error;
-        return data as DailyLog;
+      const result = await logProgress({
+        existingLogId,
+        commitmentId,
+        date,
+        completedAmount,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error);
       }
+
+      return result.data as DailyLog;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -339,7 +329,6 @@ export function useLogProgress() {
 // Approve/Reject Log
 export function useApproveLog() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({
@@ -349,70 +338,13 @@ export function useApproveLog() {
       log: LogWithRelations;
       approved: boolean;
     }) => {
-      // Guard: only process pending logs to prevent double-counting
-      if (log.status !== "pending") {
-        throw new Error("Log has already been processed");
-      }
+      const result = await approveLog({
+        logId: log.id,
+        approved,
+      });
 
-      const { data: { user: admin } } = await supabase.auth.getUser();
-
-      // Update log status
-      const { error } = await supabase
-        .from("daily_logs")
-        .update({
-          status: approved ? "approved" : "rejected",
-          reviewed_by: admin!.id,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq("id", log.id)
-        .eq("status", "pending"); // Extra safety: only update if still pending
-
-      if (error) throw error;
-
-      if (approved) {
-        // Get current user_commitment stats
-        const { data: userCommitment } = await supabase
-          .from("user_commitments")
-          .select("*")
-          .eq("user_id", log.user_id)
-          .eq("commitment_id", log.commitment_id)
-          .single();
-
-        if (!userCommitment) throw new Error("User commitment not found");
-
-        const totalDue = log.target_amount + log.carry_over_from_previous;
-        const completed = log.completed_amount;
-        const missed = Math.max(0, totalDue - completed);
-
-        if (completed >= totalDue) {
-          // Full completion - increment streak and add reps to total
-          const newStreak = userCommitment.current_streak + 1;
-          await supabase
-            .from("user_commitments")
-            .update({
-              total_completed: userCommitment.total_completed + completed,
-              current_streak: newStreak,
-              best_streak: Math.max(userCommitment.best_streak, newStreak),
-              pending_carry_over: 0,
-            })
-            .eq("user_id", log.user_id)
-            .eq("commitment_id", log.commitment_id);
-        } else {
-          // Partial completion - reset streak, add reps to total, add carry over
-          const carryOver = calculateCarryOver(
-            missed,
-            log.commitment.punishment_multiplier
-          );
-          await supabase
-            .from("user_commitments")
-            .update({
-              total_completed: userCommitment.total_completed + completed,
-              current_streak: 0,
-              pending_carry_over: carryOver,
-            })
-            .eq("user_id", log.user_id)
-            .eq("commitment_id", log.commitment_id);
-        }
+      if (!result.success) {
+        throw new Error(result.error);
       }
 
       return { approved };
@@ -427,7 +359,6 @@ export function useApproveLog() {
 // Create Commitment
 export function useCreateCommitment() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (commitment: {
@@ -439,14 +370,13 @@ export function useCreateCommitment() {
       punishment_multiplier: number;
       realm_id: string;
     }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("commitments")
-        .insert({ ...commitment, created_by: user!.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Commitment;
+      const result = await createCommitmentAction(commitment);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result.data as Commitment;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.commitments });
@@ -457,7 +387,6 @@ export function useCreateCommitment() {
 // Update Commitment
 export function useUpdateCommitment() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({
@@ -472,14 +401,13 @@ export function useUpdateCommitment() {
       active_days?: number[];
       punishment_multiplier?: number;
     }) => {
-      const { data, error } = await supabase
-        .from("commitments")
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Commitment;
+      const result = await updateCommitmentAction({ id, ...updates });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result.data as Commitment;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.commitments });
@@ -490,15 +418,14 @@ export function useUpdateCommitment() {
 // Toggle Commitment Active
 export function useToggleCommitmentActive() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
-      const { error } = await supabase
-        .from("commitments")
-        .update({ is_active })
-        .eq("id", id);
-      if (error) throw error;
+      const result = await toggleCommitmentActiveAction({ id, is_active });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.commitments });
@@ -509,12 +436,14 @@ export function useToggleCommitmentActive() {
 // Delete Commitment
 export function useDeleteCommitment() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("commitments").delete().eq("id", id);
-      if (error) throw error;
+      const result = await deleteCommitmentAction(id);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.commitments });
@@ -525,17 +454,16 @@ export function useDeleteCommitment() {
 // Create Realm
 export function useCreateRealm() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (realm: { name: string; slug: string; avatar_url?: string }) => {
-      const { data, error } = await supabase
-        .from("realms")
-        .insert({ ...realm, avatar_url: realm.avatar_url || null })
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Realm;
+      const result = await createRealmAction(realm);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result.data as Realm;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realms });
@@ -546,7 +474,6 @@ export function useCreateRealm() {
 // Update Realm
 export function useUpdateRealm() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({
@@ -558,14 +485,13 @@ export function useUpdateRealm() {
       slug?: string;
       avatar_url?: string | null;
     }) => {
-      const { data, error } = await supabase
-        .from("realms")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Realm;
+      const result = await updateRealmAction({ id, ...updates });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result.data as Realm;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realms });
@@ -576,12 +502,14 @@ export function useUpdateRealm() {
 // Delete Realm
 export function useDeleteRealm() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("realms").delete().eq("id", id);
-      if (error) throw error;
+      const result = await deleteRealmAction(id);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realms });
@@ -609,7 +537,6 @@ export function useDeleteInvite() {
 // Assign User Commitments
 export function useAssignUserCommitments() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async ({
@@ -619,38 +546,10 @@ export function useAssignUserCommitments() {
       userId: string;
       commitmentIds: string[];
     }) => {
-      // Get current assignments
-      const { data: current } = await supabase
-        .from("user_commitments")
-        .select("commitment_id")
-        .eq("user_id", userId);
+      const result = await assignUserCommitmentsAction({ userId, commitmentIds });
 
-      const currentIds = new Set(current?.map((c) => c.commitment_id) || []);
-      const newIds = new Set(commitmentIds);
-
-      // Find what to remove and what to add
-      const toRemove = [...currentIds].filter((id) => !newIds.has(id));
-      const toAdd = commitmentIds.filter((id) => !currentIds.has(id));
-
-      // Remove unselected commitments
-      if (toRemove.length > 0) {
-        const { error } = await supabase
-          .from("user_commitments")
-          .delete()
-          .eq("user_id", userId)
-          .in("commitment_id", toRemove);
-        if (error) throw error;
-      }
-
-      // Add new commitments
-      if (toAdd.length > 0) {
-        const { error } = await supabase.from("user_commitments").insert(
-          toAdd.map((commitmentId) => ({
-            user_id: userId,
-            commitment_id: commitmentId,
-          }))
-        );
-        if (error) throw error;
+      if (!result.success) {
+        throw new Error(result.error);
       }
     },
     onSuccess: (_, variables) => {
@@ -664,7 +563,6 @@ export function useAssignUserCommitments() {
 // Create Holiday
 export function useCreateHoliday() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (holiday: {
@@ -673,14 +571,13 @@ export function useCreateHoliday() {
       date: string;
       description: string;
     }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("holidays")
-        .insert({ ...holiday, created_by: user!.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Holiday;
+      const result = await createHolidayAction(holiday);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result.data as Holiday;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holidays"] });
@@ -691,12 +588,14 @@ export function useCreateHoliday() {
 // Delete Holiday
 export function useDeleteHoliday() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("holidays").delete().eq("id", id);
-      if (error) throw error;
+      const result = await deleteHolidayAction(id);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holidays"] });

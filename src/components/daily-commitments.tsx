@@ -65,7 +65,6 @@ export function DailyCommitments({
     }
 
     const existingLog = getLogForCommitment(uc.commitment.id);
-    const carryOver = uc.pending_carry_over || 0;
 
     try {
       const newLog = await logProgressMutation.mutateAsync({
@@ -73,9 +72,7 @@ export function DailyCommitments({
         userId: profile.id,
         commitmentId: uc.commitment.id,
         date: todayStr,
-        targetAmount: uc.commitment.daily_target,
         completedAmount: amount,
-        carryOver,
       });
 
       // Update local state
@@ -89,8 +86,9 @@ export function DailyCommitments({
 
       toast.success(existingLog ? "Progress updated! Awaiting approval." : "Progress logged! Awaiting approval.");
       setAmounts((prev) => ({ ...prev, [uc.commitment.id]: 0 }));
-    } catch {
-      toast.error(existingLog ? "Failed to update log" : "Failed to log progress");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to log progress";
+      toast.error(message);
     }
   };
 
