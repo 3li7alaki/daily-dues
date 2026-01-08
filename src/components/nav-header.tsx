@@ -14,6 +14,7 @@ import {
   Building2,
   BicepsFlexed,
   Calendar,
+  Swords,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,6 +46,7 @@ interface NavHeaderProps {
 const userNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/challenges", label: "Challenges", icon: Swords },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
@@ -52,9 +54,11 @@ const userNavItems = [
 const adminNavItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/challenges", label: "Challenges", icon: Swords },
   { href: "/admin/realms", label: "Realms", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/commitments", label: "Commitments", icon: BicepsFlexed },
+  { href: "/admin/challenges", label: "Manage Challenges", icon: Swords },
   { href: "/admin/holidays", label: "Holidays", icon: Calendar },
   { href: "/admin/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
