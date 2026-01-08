@@ -86,24 +86,28 @@ async function notifyChallengeEnded(
   commitmentUnit: string,
   results: { name: string; finalReps: number | null }[]
 ) {
-  const validResults = results
-    .filter((r) => r.finalReps !== null)
-    .sort((a, b) => (b.finalReps || 0) - (a.finalReps || 0));
-
-  const getRankEmoji = (index: number) => {
-    if (index === 0) return ":first_place_medal:";
-    if (index === 1) return ":second_place_medal:";
-    if (index === 2) return ":third_place_medal:";
-    return `${index + 1}.`;
-  };
+  const completed = results.filter((r) => r.finalReps !== null);
+  const partial = results.filter((r) => r.finalReps === null);
 
   let resultsText = "";
-  if (validResults.length === 0) {
-    resultsText = "_No participants qualified (need 2+ votes)_";
-  } else {
-    resultsText = validResults
-      .map((r, i) => `${getRankEmoji(i)} *${r.name}* — ${r.finalReps} ${commitmentUnit}`)
+
+  if (completed.length > 0) {
+    resultsText += "*Completed:*\n";
+    resultsText += completed
+      .map((r) => `:white_check_mark: *${r.name}* — ${r.finalReps} ${commitmentUnit}`)
       .join("\n");
+  }
+
+  if (partial.length > 0) {
+    if (resultsText) resultsText += "\n\n";
+    resultsText += "*Partial (need 2+ votes):*\n";
+    resultsText += partial
+      .map((r) => `:hourglass: ${r.name}`)
+      .join("\n");
+  }
+
+  if (!resultsText) {
+    resultsText = "_No participants_";
   }
 
   const blocks = [
@@ -119,7 +123,7 @@ async function notifyChallengeEnded(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `The *${challenge.name}* challenge for ${commitmentName} has ended!\n\n*Final Results:*`,
+        text: `The *${challenge.name}* challenge for ${commitmentName} has ended!`,
       },
     },
     {
@@ -686,6 +690,101 @@ export async function archiveChallenge(challengeId: string): Promise<ArchiveChal
   }
 
   // Send Slack notification with results
+  const commitmentData = challenge.commitment as { name: string; unit: string } | null;
+  await notifyChallengeEnded(
+    challenge as Challenge,
+    commitmentData?.name || "Unknown",
+    commitmentData?.unit || "reps",
+    results
+  );
+
+  return { success: true };
+}
+
+// ============ SEND CHALLENGE RESULTS TO SLACK ============
+
+export async function sendChallengeResults(challengeId: string): Promise<ArchiveChallengeResult> {
+  const supabase = await createClient();
+  const { error: authError } = await verifyAdmin(supabase);
+
+  if (authError) {
+    return { success: false, error: authError };
+  }
+
+  const adminClient = createAdminClient();
+
+  // Get challenge with commitment info
+  const { data: challenge } = await adminClient
+    .from("challenges")
+    .select("*, commitment:commitments(name, unit)")
+    .eq("id", challengeId)
+    .single();
+
+  if (!challenge) {
+    return { success: false, error: "Challenge not found" };
+  }
+
+  // Check if results were already processed (prevent double-adding reps)
+  const alreadyProcessed = !!challenge.results_processed_at;
+
+  // Get members with user info and recalculate final_reps using mode
+  const { data: members } = await adminClient
+    .from("challenge_members")
+    .select("*, user:profiles(name)")
+    .eq("challenge_id", challengeId);
+
+  const results: { name: string; finalReps: number | null }[] = [];
+
+  for (const member of members || []) {
+    const votes = (member.votes || {}) as Record<string, number>;
+    const finalReps = getMostVotedValue(votes);
+
+    // Update final_reps if it changed (in case it was calculated with old logic)
+    if (finalReps !== member.final_reps) {
+      await adminClient
+        .from("challenge_members")
+        .update({ final_reps: finalReps })
+        .eq("id", member.id);
+    }
+
+    // Add final_reps to user's total_completed in user_commitments
+    // Only do this if not already processed (prevent double-adding)
+    if (!alreadyProcessed && finalReps !== null && finalReps > 0) {
+      // Get the user's commitment record
+      const { data: userCommitment } = await adminClient
+        .from("user_commitments")
+        .select("id, total_completed")
+        .eq("user_id", member.user_id)
+        .eq("commitment_id", challenge.commitment_id)
+        .single();
+
+      if (userCommitment) {
+        // Add challenge reps to their total
+        await adminClient
+          .from("user_commitments")
+          .update({
+            total_completed: (userCommitment.total_completed || 0) + finalReps,
+          })
+          .eq("id", userCommitment.id);
+      }
+    }
+
+    const memberUser = member.user as { name: string } | null;
+    results.push({
+      name: memberUser?.name || "Unknown",
+      finalReps,
+    });
+  }
+
+  // Mark as processed if this is the first time
+  if (!alreadyProcessed) {
+    await adminClient
+      .from("challenges")
+      .update({ results_processed_at: new Date().toISOString() })
+      .eq("id", challengeId);
+  }
+
+  // Send Slack notification
   const commitmentData = challenge.commitment as { name: string; unit: string } | null;
   await notifyChallengeEnded(
     challenge as Challenge,

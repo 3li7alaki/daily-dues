@@ -9,6 +9,7 @@ import {
   Clock,
   Users,
   Archive,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -18,6 +19,7 @@ import {
   useCommitments,
   useCreateChallenge,
   useArchiveChallenge,
+  useSendChallengeResults,
 } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +89,7 @@ export function ChallengesManager() {
   const { data: commitments = [] } = useCommitments();
   const createChallengeMutation = useCreateChallenge();
   const archiveChallengeMutation = useArchiveChallenge();
+  const sendResultsMutation = useSendChallengeResults();
 
   // Filter commitments by current realm
   const realmCommitments = currentRealm
@@ -134,6 +137,15 @@ export function ChallengesManager() {
       setChallengeToArchive(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to archive challenge");
+    }
+  };
+
+  const handleSendResults = async (challengeId: string) => {
+    try {
+      await sendResultsMutation.mutateAsync(challengeId);
+      toast.success("Results sent to Slack!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send results");
     }
   };
 
@@ -345,13 +357,32 @@ export function ChallengesManager() {
             {archivedChallenges.map((challenge) => (
               <Card key={challenge.id} className="opacity-75">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    {challenge.name}
-                    <Badge variant="secondary">Archived</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {challenge.commitment.name} - {challenge.member_count} participants
-                  </CardDescription>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        {challenge.name}
+                        <Badge variant="secondary">Archived</Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        {challenge.commitment.name} - {challenge.member_count} participants
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSendResults(challenge.id)}
+                      disabled={sendResultsMutation.isPending}
+                    >
+                      {sendResultsMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-1" />
+                          Send Results
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">

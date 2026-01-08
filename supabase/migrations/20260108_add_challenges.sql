@@ -18,7 +18,10 @@ CREATE TABLE challenges (
     ends_at TIMESTAMPTZ NOT NULL,
     created_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Timestamp when results were processed (reps added to totals + Slack sent)
+    -- Used to prevent double-processing
+    results_processed_at TIMESTAMPTZ
 );
 
 -- Challenge members (participants) table

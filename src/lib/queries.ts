@@ -25,6 +25,7 @@ import {
   getChallenges as getChallengesAction,
   getChallengeLeaderboard as getChallengeLeaderboardAction,
   archiveChallenge as archiveChallengeAction,
+  sendChallengeResults as sendChallengeResultsAction,
   type ChallengeWithDetails,
   type ChallengeLeaderboardData,
   type CreateChallengeInput,
@@ -735,6 +736,20 @@ export function useArchiveChallenge() {
   return useMutation({
     mutationFn: async (challengeId: string) => {
       const result = await archiveChallengeAction(challengeId);
+      if (!result.success) throw new Error(result.error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["challenges"] });
+    },
+  });
+}
+
+export function useSendChallengeResults() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (challengeId: string) => {
+      const result = await sendChallengeResultsAction(challengeId);
       if (!result.success) throw new Error(result.error);
     },
     onSuccess: () => {

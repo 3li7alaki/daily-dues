@@ -133,11 +133,12 @@ export default function ChallengeDetailPage() {
     }
   };
 
-  const getRankDisplay = (index: number) => {
-    if (index === 0) return <Trophy className="h-5 w-5 text-yellow-500" />;
-    if (index === 1) return <Trophy className="h-5 w-5 text-gray-400" />;
-    if (index === 2) return <Trophy className="h-5 w-5 text-amber-600" />;
-    return <span className="text-muted-foreground">{index + 1}</span>;
+  const getStatusDisplay = (entry: typeof entries[0]) => {
+    const score = challenge.status === "archived" ? entry.final_reps : entry.agreed_reps;
+    if (score !== null) {
+      return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+    }
+    return <Clock className="h-5 w-5 text-muted-foreground" />;
   };
 
   return (
@@ -234,14 +235,14 @@ export default function ChallengeDetailPage() {
         </Card>
       )}
 
-      {/* Leaderboard */}
+      {/* Participants */}
       <Card>
         <CardHeader>
-          <CardTitle>Leaderboard</CardTitle>
+          <CardTitle>Participants</CardTitle>
           <CardDescription>
             {isActive
-              ? "Rankings based on minimum agreed votes (2+ voters required)"
-              : "Final rankings"}
+              ? "Vote on others to verify their completion (2+ votes required)"
+              : "Final results"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -253,15 +254,15 @@ export default function ChallengeDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-16">Rank</TableHead>
+                  <TableHead className="w-16">Status</TableHead>
                   <TableHead>Participant</TableHead>
                   <TableHead className="text-right">Votes</TableHead>
-                  <TableHead className="text-right">Score</TableHead>
+                  <TableHead className="text-right">Result</TableHead>
                   {isActive && isMember && <TableHead className="text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((entry, index) => {
+                {entries.map((entry) => {
                   const isCurrentUser = entry.user_id === current_user_id;
                   const myVote = entry.votes[current_user_id] || 0;
                   const score = challenge.status === "archived"
@@ -276,7 +277,7 @@ export default function ChallengeDetailPage() {
                       animate={{ opacity: 1 }}
                       className={isCurrentUser ? "bg-muted/50" : ""}
                     >
-                      <TableCell>{getRankDisplay(index)}</TableCell>
+                      <TableCell>{getStatusDisplay(entry)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserAvatar
@@ -303,11 +304,11 @@ export default function ChallengeDetailPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         {score !== null ? (
-                          <span className="font-bold">
+                          <span className="font-bold text-green-600">
                             {score} {commitment_unit}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">-</span>
+                          <span className="text-muted-foreground">Pending</span>
                         )}
                       </TableCell>
                       {isActive && isMember && (
