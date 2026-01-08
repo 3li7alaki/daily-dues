@@ -1,24 +1,21 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Storage bucket names - add new buckets here as needed
+ * Main storage bucket name - set via env or defaults to "public"
  */
-export const STORAGE_BUCKETS = {
+export const STORAGE_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "public";
+
+/**
+ * Storage folders within the bucket
+ */
+export const STORAGE_FOLDERS = {
   AVATARS: "avatars",
-  // Add more buckets as needed:
+  // Add more folders as needed:
   // DOCUMENTS: "documents",
   // MEDIA: "media",
 } as const;
 
-export type StorageBucket = (typeof STORAGE_BUCKETS)[keyof typeof STORAGE_BUCKETS];
-
-/**
- * Storage configuration from environment
- */
-export const STORAGE_CONFIG = {
-  endpoint: process.env.SUPABASE_STORAGE_ENDPOINT,
-  region: process.env.SUPABASE_STORAGE_REGION || "ap-south-1",
-} as const;
+export type StorageFolder = (typeof STORAGE_FOLDERS)[keyof typeof STORAGE_FOLDERS];
 
 /**
  * Allowed file types for different upload contexts
@@ -37,7 +34,7 @@ export const MAX_FILE_SIZES = {
 } as const;
 
 export interface UploadOptions {
-  bucket: StorageBucket;
+  folder: StorageFolder;
   path: string;
   file: File | Blob;
   contentType?: string;
@@ -126,10 +123,13 @@ export async function uploadFile(
   supabase: SupabaseClient,
   options: UploadOptions
 ): Promise<UploadResult> {
-  const { bucket, path, file, contentType, upsert = false } = options;
+  const { folder, path, file, contentType, upsert = false } = options;
+
+  // Full path includes the folder
+  const fullPath = `${folder}/${path}`;
 
   try {
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(fullPath, file, {
       contentType: contentType || (file instanceof File ? file.type : undefined),
       upsert,
     });
@@ -140,11 +140,11 @@ export async function uploadFile(
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from(bucket).getPublicUrl(path);
+    } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(fullPath);
 
     return {
       success: true,
-      path,
+      path: fullPath,
       publicUrl,
     };
   } catch (err) {
@@ -160,11 +160,10 @@ export async function uploadFile(
  */
 export async function deleteFile(
   supabase: SupabaseClient,
-  bucket: StorageBucket,
   path: string
 ): Promise<DeleteResult> {
   try {
-    const { error } = await supabase.storage.from(bucket).remove([path]);
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([path]);
 
     if (error) {
       return { success: false, error: error.message };
@@ -184,20 +183,19 @@ export async function deleteFile(
  */
 export function getPublicUrl(
   supabase: SupabaseClient,
-  bucket: StorageBucket,
   path: string
 ): string {
   const {
     data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(path);
+  } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   return publicUrl;
 }
 
 /**
  * Extract the storage path from a full public URL
  */
-export function extractPathFromUrl(url: string, bucket: StorageBucket): string | null {
-  const pattern = new RegExp(`/storage/v1/object/public/${bucket}/(.+)$`);
+export function extractPathFromUrl(url: string): string | null {
+  const pattern = new RegExp(`/storage/v1/object/public/${STORAGE_BUCKET}/(.+)$`);
   const match = url.match(pattern);
   return match ? match[1] : null;
 }
@@ -231,12 +229,12 @@ export async function uploadAvatar(
     return { success: false, error: validation.error };
   }
 
-  // Generate path: avatars/{userId}/{timestamp}-avatar.{ext}
+  // Generate path: {userId}/{timestamp}-avatar.{ext}
   const ext = getFileExtension(file);
   const path = `${userId}/${Date.now()}-avatar.${ext}`;
 
   return uploadFile(supabase, {
-    bucket: STORAGE_BUCKETS.AVATARS,
+    folder: STORAGE_FOLDERS.AVATARS,
     path,
     file,
     upsert: true,
@@ -250,11 +248,11 @@ export async function deleteAvatar(
   supabase: SupabaseClient,
   avatarUrl: string
 ): Promise<DeleteResult> {
-  const path = extractPathFromUrl(avatarUrl, STORAGE_BUCKETS.AVATARS);
+  const path = extractPathFromUrl(avatarUrl);
 
   if (!path) {
     return { success: false, error: "Invalid avatar URL" };
   }
 
-  return deleteFile(supabase, STORAGE_BUCKETS.AVATARS, path);
+  return deleteFile(supabase, path);
 }
