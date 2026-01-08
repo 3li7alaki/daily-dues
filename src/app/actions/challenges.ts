@@ -3,6 +3,149 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { Challenge, ChallengeMember, Profile } from "@/types/database";
 
+// ============ SLACK NOTIFICATIONS ============
+
+async function sendSlackNotification(blocks: object[], text: string) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+  if (!webhookUrl) return; // Silently skip if not configured
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, blocks }),
+    });
+  } catch (error) {
+    console.error("[Slack] Failed to send notification:", error);
+  }
+}
+
+async function notifyChallengeStarted(
+  challenge: Challenge,
+  commitmentName: string,
+  commitmentUnit: string,
+  appUrl: string
+) {
+  const endsAt = new Date(challenge.ends_at).toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `:crossed_swords: New Challenge: ${challenge.name}`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `A new challenge has started!\n\n*Commitment:* ${commitmentName}\n*Max ${commitmentUnit}:* ${challenge.max_units}\n*Ends:* ${endsAt}`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: challenge.description || "_No description_",
+      },
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Join Challenge",
+            emoji: true,
+          },
+          url: `${appUrl}/dashboard/challenges/${challenge.id}`,
+          style: "primary",
+        },
+      ],
+    },
+  ];
+
+  await sendSlackNotification(
+    blocks,
+    `New Challenge: ${challenge.name} - Join now!`
+  );
+}
+
+async function notifyChallengeEnded(
+  challenge: Challenge,
+  commitmentName: string,
+  commitmentUnit: string,
+  results: { name: string; finalReps: number | null }[]
+) {
+  const validResults = results
+    .filter((r) => r.finalReps !== null)
+    .sort((a, b) => (b.finalReps || 0) - (a.finalReps || 0));
+
+  const getRankEmoji = (index: number) => {
+    if (index === 0) return ":first_place_medal:";
+    if (index === 1) return ":second_place_medal:";
+    if (index === 2) return ":third_place_medal:";
+    return `${index + 1}.`;
+  };
+
+  let resultsText = "";
+  if (validResults.length === 0) {
+    resultsText = "_No participants qualified (need 2+ votes)_";
+  } else {
+    resultsText = validResults
+      .map((r, i) => `${getRankEmoji(i)} *${r.name}* — ${r.finalReps} ${commitmentUnit}`)
+      .join("\n");
+  }
+
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `:checkered_flag: Challenge Ended: ${challenge.name}`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `The *${challenge.name}* challenge for ${commitmentName} has ended!\n\n*Final Results:*`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: resultsText,
+      },
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: ":muscle: Great effort everyone! Stay consistent.",
+        },
+      ],
+    },
+  ];
+
+  await sendSlackNotification(
+    blocks,
+    `Challenge Ended: ${challenge.name} - See the results!`
+  );
+}
+
 // Helper function to verify admin
 async function verifyAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -77,7 +220,7 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
   // Verify commitment exists and belongs to the realm
   const { data: commitment } = await adminClient
     .from("commitments")
-    .select("id, realm_id")
+    .select("id, realm_id, name, unit")
     .eq("id", input.commitment_id)
     .single();
 
@@ -106,6 +249,15 @@ export async function createChallenge(input: CreateChallengeInput): Promise<Chal
   if (error) {
     return { success: false, error: error.message };
   }
+
+  // Send Slack notification
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  await notifyChallengeStarted(
+    data as Challenge,
+    commitment.name,
+    commitment.unit,
+    appUrl
+  );
 
   return { success: true, data: data as Challenge };
 }
@@ -459,10 +611,10 @@ export async function archiveChallenge(challengeId: string): Promise<ArchiveChal
 
   const adminClient = createAdminClient();
 
-  // Get challenge
+  // Get challenge with commitment info
   const { data: challenge } = await adminClient
     .from("challenges")
-    .select("*")
+    .select("*, commitment:commitments(name, unit)")
     .eq("id", challengeId)
     .single();
 
@@ -484,11 +636,13 @@ export async function archiveChallenge(challengeId: string): Promise<ArchiveChal
     return { success: false, error: updateError.message };
   }
 
-  // Calculate final reps for all members
+  // Calculate final reps for all members and collect results
   const { data: members } = await adminClient
     .from("challenge_members")
-    .select("*")
+    .select("*, user:profiles(name)")
     .eq("challenge_id", challengeId);
+
+  const results: { name: string; finalReps: number | null }[] = [];
 
   for (const member of members || []) {
     const votes = (member.votes || {}) as Record<string, number>;
@@ -503,7 +657,22 @@ export async function archiveChallenge(challengeId: string): Promise<ArchiveChal
       .from("challenge_members")
       .update({ final_reps: finalReps })
       .eq("id", member.id);
+
+    const memberUser = member.user as { name: string } | null;
+    results.push({
+      name: memberUser?.name || "Unknown",
+      finalReps,
+    });
   }
+
+  // Send Slack notification with results
+  const commitmentData = challenge.commitment as { name: string; unit: string } | null;
+  await notifyChallengeEnded(
+    challenge as Challenge,
+    commitmentData?.name || "Unknown",
+    commitmentData?.unit || "reps",
+    results
+  );
 
   return { success: true };
 }
