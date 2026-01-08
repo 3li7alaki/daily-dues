@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, User, Lock, Check, Eye, EyeOff } from "lucide-react";
+import { Loader2, User, Lock, Check, Eye, EyeOff, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
@@ -34,6 +34,7 @@ function SettingsForm({ profile }: SettingsFormProps) {
   const [username, setUsername] = useState(profile.username);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url || "");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Password state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -42,6 +43,50 @@ function SettingsForm({ profile }: SettingsFormProps) {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Client-side validation
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image must be less than 2MB");
+      return;
+    }
+
+    setUploadingAvatar(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/upload/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Upload failed");
+      }
+
+      setAvatarUrl(result.url);
+      toast.success("Avatar uploaded!");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploadingAvatar(false);
+      // Reset the input
+      e.target.value = "";
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,23 +200,56 @@ function SettingsForm({ profile }: SettingsFormProps) {
           </CardHeader>
           <form onSubmit={handleSaveProfile}>
             <CardContent className="space-y-6">
-              {/* Avatar Preview */}
+              {/* Avatar Upload */}
               <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
-                  <AvatarFallback className="text-2xl">
-                    {name.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-20 w-20">
+                    {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
+                    <AvatarFallback className="text-2xl">
+                      {name.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-full">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  )}
+                </div>
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="avatar">Avatar URL</Label>
-                  <Input
-                    id="avatar"
-                    type="url"
-                    placeholder="https://example.com/avatar.png"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
+                  <Label>Avatar</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={uploadingAvatar}
+                      onClick={() => document.getElementById("avatar-upload")?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {uploadingAvatar ? "Uploading..." : "Upload Image"}
+                    </Button>
+                    {avatarUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAvatarUrl("")}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <input
+                    id="avatar-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Max 2MB. JPG, PNG, GIF, or WebP.
+                  </p>
                 </div>
               </div>
 
