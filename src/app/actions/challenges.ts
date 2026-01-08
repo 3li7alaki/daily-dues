@@ -146,6 +146,34 @@ async function notifyChallengeEnded(
   );
 }
 
+// Helper function to get the most voted value (mode)
+// If tie, returns the lowest of the tied values
+function getMostVotedValue(votes: Record<string, number>): number | null {
+  const values = Object.values(votes);
+  if (values.length < 2) return null;
+
+  // Count occurrences of each value
+  const counts = new Map<number, number>();
+  for (const val of values) {
+    counts.set(val, (counts.get(val) || 0) + 1);
+  }
+
+  // Find the max count
+  let maxCount = 0;
+  for (const count of counts.values()) {
+    if (count > maxCount) maxCount = count;
+  }
+
+  // Get all values with max count
+  const topValues: number[] = [];
+  for (const [val, count] of counts) {
+    if (count === maxCount) topValues.push(val);
+  }
+
+  // Return lowest of tied values (prevents inflation)
+  return Math.min(...topValues);
+}
+
 // Helper function to verify admin
 async function verifyAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -544,11 +572,8 @@ export async function getChallengeLeaderboard(
     const voteValues = Object.values(votes);
     const voteCount = voteValues.length;
 
-    // Calculate agreed reps (minimum) if at least 2 votes
-    let agreedReps: number | null = null;
-    if (voteCount >= 2) {
-      agreedReps = Math.min(...voteValues);
-    }
+    // Calculate agreed reps (most voted value) if at least 2 votes
+    const agreedReps = getMostVotedValue(votes);
 
     const memberUser = member.user as Profile | null;
 
@@ -646,12 +671,7 @@ export async function archiveChallenge(challengeId: string): Promise<ArchiveChal
 
   for (const member of members || []) {
     const votes = (member.votes || {}) as Record<string, number>;
-    const voteValues = Object.values(votes);
-
-    let finalReps: number | null = null;
-    if (voteValues.length >= 2) {
-      finalReps = Math.min(...voteValues);
-    }
+    const finalReps = getMostVotedValue(votes);
 
     await adminClient
       .from("challenge_members")

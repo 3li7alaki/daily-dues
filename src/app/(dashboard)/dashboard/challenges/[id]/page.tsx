@@ -228,7 +228,7 @@ export default function ChallengeDetailPage() {
           <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>1. You cannot vote for yourself - others must verify your reps.</p>
             <p>2. Each person needs at least 2 votes to qualify for the leaderboard.</p>
-            <p>3. The lowest vote becomes your final score (prevents inflation).</p>
+            <p>3. The most agreed-upon number becomes your final score. If tied, the lower value wins.</p>
             <p>4. You can only increase your vote, never decrease it.</p>
           </CardContent>
         </Card>
