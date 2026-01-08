@@ -18,6 +18,18 @@ import {
   updateRealm as updateRealmAction,
   deleteRealm as deleteRealmAction,
 } from "@/app/actions/realms";
+import {
+  createChallenge as createChallengeAction,
+  joinChallenge as joinChallengeAction,
+  submitVote as submitVoteAction,
+  getChallenges as getChallengesAction,
+  getChallengeLeaderboard as getChallengeLeaderboardAction,
+  archiveChallenge as archiveChallengeAction,
+  type ChallengeWithDetails,
+  type ChallengeLeaderboardData,
+  type CreateChallengeInput,
+  type SubmitVoteInput,
+} from "@/app/actions/challenges";
 import type {
   Profile,
   Realm,
@@ -31,6 +43,7 @@ import type {
 
 // Query Keys
 export const queryKeys = {
+  currentUser: ["currentUser"] as const,
   profile: (userId: string) => ["profile", userId] as const,
   realms: ["realms"] as const,
   realm: (realmId: string) => ["realm", realmId] as const,
@@ -41,8 +54,10 @@ export const queryKeys = {
   userCommitments: (userId: string) => ["userCommitments", userId] as const,
   dailyLogs: (userId: string, date: string) => ["dailyLogs", userId, date] as const,
   pendingApprovals: (realmId?: string) => ["pendingApprovals", realmId] as const,
-  leaderboard: (realmId?: string) => ["leaderboard", realmId] as const,
+  leaderboard: (commitmentId?: string, sortBy?: string) => ["leaderboard", commitmentId, sortBy] as const,
   holidays: (realmId?: string) => ["holidays", realmId] as const,
+  challenges: (realmId?: string) => ["challenges", realmId] as const,
+  challengeLeaderboard: (challengeId: string) => ["challengeLeaderboard", challengeId] as const,
 };
 
 // ============ Queries ============
@@ -59,6 +74,26 @@ export function useRealms() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as Realm[];
+    },
+  });
+}
+
+// Current User Profile
+export function useCurrentUser() {
+  const supabase = createClient();
+  return useQuery({
+    queryKey: queryKeys.currentUser,
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (error) throw error;
+      return data as Profile;
     },
   });
 }
@@ -177,11 +212,11 @@ export interface LeaderboardEntry extends UserCommitment {
   commitment: Commitment;
 }
 
-// Leaderboard - per commitment
-export function useLeaderboard(commitmentId?: string) {
+// Leaderboard - per commitment with sorting options
+export function useLeaderboard(commitmentId?: string, sortBy: "streak" | "reps" = "streak") {
   const supabase = createClient();
   return useQuery({
-    queryKey: queryKeys.leaderboard(commitmentId),
+    queryKey: queryKeys.leaderboard(commitmentId, sortBy),
     queryFn: async () => {
       // Get user_commitments with user and commitment info
       const { data, error } = await supabase
@@ -200,32 +235,39 @@ export function useLeaderboard(commitmentId?: string) {
       // Only include entries where user has role 'user' (not admin)
       entries = entries.filter((e) => e.user.role === "user");
 
-      // Get today's logs to sort by earliest completion when scores are tied
-      const today = new Date().toISOString().split("T")[0];
-      const { data: todayLogs } = await supabase
-        .from("daily_logs")
-        .select("user_id, commitment_id, reviewed_at")
-        .eq("date", today)
-        .eq("status", "approved");
+      // Sort based on sortBy parameter
+      if (sortBy === "reps") {
+        // Sort by total_completed descending
+        entries.sort((a, b) => b.total_completed - a.total_completed);
+      } else {
+        // Default: sort by streak
+        // Get today's logs to sort by earliest completion when scores are tied
+        const today = new Date().toISOString().split("T")[0];
+        const { data: todayLogs } = await supabase
+          .from("daily_logs")
+          .select("user_id, commitment_id, reviewed_at")
+          .eq("date", today)
+          .eq("status", "approved");
 
-      // Create a map of user+commitment to reviewed_at time
-      const completionTimeMap = new Map<string, string>();
-      todayLogs?.forEach((log) => {
-        const key = `${log.user_id}-${log.commitment_id}`;
-        completionTimeMap.set(key, log.reviewed_at || "");
-      });
+        // Create a map of user+commitment to reviewed_at time
+        const completionTimeMap = new Map<string, string>();
+        todayLogs?.forEach((log) => {
+          const key = `${log.user_id}-${log.commitment_id}`;
+          completionTimeMap.set(key, log.reviewed_at || "");
+        });
 
-      // Sort by current_streak desc, then by earliest completion time
-      entries.sort((a, b) => {
-        // Primary sort: current_streak descending
-        if (b.current_streak !== a.current_streak) {
-          return b.current_streak - a.current_streak;
-        }
-        // Secondary sort: earliest completion time (who finished first today)
-        const timeA = completionTimeMap.get(`${a.user_id}-${a.commitment_id}`) || "9999";
-        const timeB = completionTimeMap.get(`${b.user_id}-${b.commitment_id}`) || "9999";
-        return timeA.localeCompare(timeB);
-      });
+        // Sort by current_streak desc, then by earliest completion time
+        entries.sort((a, b) => {
+          // Primary sort: current_streak descending
+          if (b.current_streak !== a.current_streak) {
+            return b.current_streak - a.current_streak;
+          }
+          // Secondary sort: earliest completion time (who finished first today)
+          const timeA = completionTimeMap.get(`${a.user_id}-${a.commitment_id}`) || "9999";
+          const timeB = completionTimeMap.get(`${b.user_id}-${b.commitment_id}`) || "9999";
+          return timeA.localeCompare(timeB);
+        });
+      }
 
       return entries;
     },
@@ -602,3 +644,104 @@ export function useDeleteHoliday() {
     },
   });
 }
+
+// ============ Challenge Queries ============
+
+// Get challenges for a realm
+export function useChallenges(realmId?: string) {
+  return useQuery({
+    queryKey: queryKeys.challenges(realmId),
+    queryFn: async () => {
+      const result = await getChallengesAction(realmId);
+      if (!result.success) throw new Error(result.error);
+      return result.data!;
+    },
+  });
+}
+
+// Get challenge leaderboard
+export function useChallengeLeaderboard(challengeId: string) {
+  return useQuery({
+    queryKey: queryKeys.challengeLeaderboard(challengeId),
+    queryFn: async () => {
+      const result = await getChallengeLeaderboardAction(challengeId);
+      if (!result.success) throw new Error(result.error);
+      return result.data!;
+    },
+    enabled: !!challengeId,
+    refetchInterval: 30000, // Refetch every 30 seconds for live updates
+  });
+}
+
+// ============ Challenge Mutations ============
+
+// Create challenge (admin)
+export function useCreateChallenge() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CreateChallengeInput) => {
+      const result = await createChallengeAction(input);
+      if (!result.success) throw new Error(result.error);
+      return result.data!;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.challenges(variables.realm_id) });
+      queryClient.invalidateQueries({ queryKey: ["challenges"] });
+    },
+  });
+}
+
+// Join challenge
+export function useJoinChallenge() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (challengeId: string) => {
+      const result = await joinChallengeAction(challengeId);
+      if (!result.success) throw new Error(result.error);
+      return result.data!;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["challenges"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.challengeLeaderboard(data.challenge_id),
+      });
+    },
+  });
+}
+
+// Submit vote
+export function useSubmitVote() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: SubmitVoteInput) => {
+      const result = await submitVoteAction(input);
+      if (!result.success) throw new Error(result.error);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.challengeLeaderboard(variables.challenge_id),
+      });
+    },
+  });
+}
+
+// Archive challenge (admin)
+export function useArchiveChallenge() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (challengeId: string) => {
+      const result = await archiveChallengeAction(challengeId);
+      if (!result.success) throw new Error(result.error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["challenges"] });
+    },
+  });
+}
+
+// Re-export types for convenience
+export type { ChallengeWithDetails, ChallengeLeaderboardData };

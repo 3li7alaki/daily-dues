@@ -8,6 +8,7 @@ export type Json =
 
 export type UserRole = "admin" | "user";
 export type LogStatus = "pending" | "approved" | "rejected";
+export type ChallengeStatus = "active" | "archived";
 
 export interface Database {
   public: {
@@ -277,6 +278,79 @@ export interface Database {
           updated_at?: string;
         };
       };
+      challenges: {
+        Row: {
+          id: string;
+          realm_id: string;
+          commitment_id: string;
+          name: string;
+          description: string | null;
+          duration_hours: number;
+          max_units: number;
+          status: ChallengeStatus;
+          starts_at: string;
+          ends_at: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          realm_id: string;
+          commitment_id: string;
+          name: string;
+          description?: string | null;
+          duration_hours: number;
+          max_units: number;
+          status?: ChallengeStatus;
+          starts_at?: string;
+          ends_at?: string;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          realm_id?: string;
+          commitment_id?: string;
+          name?: string;
+          description?: string | null;
+          duration_hours?: number;
+          max_units?: number;
+          status?: ChallengeStatus;
+          starts_at?: string;
+          ends_at?: string;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      challenge_members: {
+        Row: {
+          id: string;
+          challenge_id: string;
+          user_id: string;
+          votes: Record<string, number>;
+          final_reps: number | null;
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          challenge_id: string;
+          user_id: string;
+          votes?: Record<string, number>;
+          final_reps?: number | null;
+          joined_at?: string;
+        };
+        Update: {
+          id?: string;
+          challenge_id?: string;
+          user_id?: string;
+          votes?: Record<string, number>;
+          final_reps?: number | null;
+          joined_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
@@ -287,6 +361,7 @@ export interface Database {
     Enums: {
       user_role: UserRole;
       log_status: LogStatus;
+      challenge_status: ChallengeStatus;
     };
   };
 }
@@ -299,3 +374,5 @@ export type Commitment = Database["public"]["Tables"]["commitments"]["Row"];
 export type UserCommitment = Database["public"]["Tables"]["user_commitments"]["Row"];
 export type DailyLog = Database["public"]["Tables"]["daily_logs"]["Row"];
 export type Holiday = Database["public"]["Tables"]["holidays"]["Row"];
+export type Challenge = Database["public"]["Tables"]["challenges"]["Row"];
+export type ChallengeMember = Database["public"]["Tables"]["challenge_members"]["Row"];

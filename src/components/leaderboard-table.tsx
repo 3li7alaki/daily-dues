@@ -5,12 +5,13 @@ import { motion } from "framer-motion";
 import {
   Trophy,
   Flame,
-  Target,
   Medal,
   Share2,
   Copy,
   Check,
   AlertTriangle,
+  Loader2,
+  Target,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
@@ -36,6 +37,8 @@ import type { Commitment } from "@/types/database";
 interface LeaderboardTableProps {
   entries: LeaderboardEntry[];
   commitment?: Commitment;
+  isAdmin?: boolean;
+  sortBy?: "streak" | "reps";
 }
 
 function getRankIcon(rank: number) {
@@ -74,11 +77,24 @@ function getRankTitle(streak: number): string {
   return "Novice";
 }
 
+function getRepsTitle(reps: number): string {
+  if (reps >= 10000) return "Legend";
+  if (reps >= 5000) return "Elite";
+  if (reps >= 1000) return "Pro";
+  if (reps >= 500) return "Dedicated";
+  if (reps >= 100) return "Active";
+  if (reps >= 50) return "Rising";
+  return "Starter";
+}
+
 export function LeaderboardTable({
   entries,
   commitment,
+  isAdmin = false,
+  sortBy = "streak",
 }: LeaderboardTableProps) {
   const [copied, setCopied] = useState(false);
+  const [sendingToSlack, setSendingToSlack] = useState(false);
 
   const unit = commitment?.unit || "";
 
@@ -98,8 +114,7 @@ export function LeaderboardTable({
       const emoji = getRankEmoji(rank);
       const title = getRankTitle(entry.current_streak);
       text += `${emoji} *${entry.user.name}*\n`;
-      text += `   🔥 ${entry.current_streak} day streak • ${title}\n`;
-      text += `   ✅ ${entry.total_completed} ${unit} total\n\n`;
+      text += `   🔥 ${entry.current_streak} day streak • ${title}\n\n`;
     });
 
     text += `\n💪 Keep pushing! Join the grind.`;
@@ -117,6 +132,42 @@ export function LeaderboardTable({
   const shareToWhatsApp = () => {
     const text = encodeURIComponent(generateShareText());
     window.open(`https://wa.me/?text=${text}`, "_blank");
+  };
+
+  const shareToSlack = async () => {
+    if (!commitment) return;
+
+    setSendingToSlack(true);
+    try {
+      const response = await fetch("/api/slack/leaderboard", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          commitmentName: commitment.name,
+          unit: commitment.unit,
+          entries: entries.slice(0, 10).map((entry) => ({
+            userName: entry.user.name,
+            currentStreak: entry.current_streak,
+            pendingCarryOver: entry.pending_carry_over || 0,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to send");
+      }
+
+      toast.success("Leaderboard sent to Slack!");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to send to Slack"
+      );
+    } finally {
+      setSendingToSlack(false);
+    }
   };
 
   if (entries.length === 0) {
@@ -169,6 +220,22 @@ export function LeaderboardTable({
               </svg>
               Share to WhatsApp
             </DropdownMenuItem>
+            {isAdmin && (
+              <DropdownMenuItem onClick={shareToSlack} disabled={sendingToSlack}>
+                {sendingToSlack ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <svg
+                    className="h-4 w-4 mr-2"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
+                  </svg>
+                )}
+                {sendingToSlack ? "Sending..." : "Send to Slack"}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -206,29 +273,30 @@ export function LeaderboardTable({
                   </div>
                   <CardTitle className="text-lg">{entry.user.name}</CardTitle>
                   <p className="text-xs text-muted-foreground">
-                    {getRankTitle(entry.current_streak)}
+                    {sortBy === "reps"
+                      ? getRepsTitle(entry.total_completed)
+                      : getRankTitle(entry.current_streak)}
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <div className="flex items-center justify-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
+                    {sortBy === "reps" ? (
+                      <>
+                        <Target className="h-4 w-4 text-blue-500" />
+                        <span className="font-bold">
+                          {entry.total_completed}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{unit}</span>
+                      </>
+                    ) : (
+                      <>
                         <Flame className="h-4 w-4 text-orange-500" />
                         <span className="font-bold">
                           {entry.current_streak}
                         </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Streak</p>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-center gap-1">
-                        <Target className="h-4 w-4 text-green-500" />
-                        <span className="font-bold">
-                          {entry.total_completed}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{unit}</p>
-                    </div>
+                        <span className="text-xs text-muted-foreground">day streak</span>
+                      </>
+                    )}
                   </div>
                   {debt > 0 && (
                     <div className="flex items-center justify-center gap-1 text-xs text-red-500 bg-red-500/10 rounded-md py-1">
@@ -258,9 +326,8 @@ export function LeaderboardTable({
                   <TableHead className="w-16">Rank</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Title</TableHead>
-                  <TableHead className="text-right">Streak</TableHead>
                   <TableHead className="text-right">
-                    {unit || "Total"}
+                    {sortBy === "reps" ? `Total ${unit}` : "Streak"}
                   </TableHead>
                   <TableHead className="text-right">Debt</TableHead>
                 </TableRow>
@@ -282,16 +349,24 @@ export function LeaderboardTable({
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {getRankTitle(entry.current_streak)}
+                        {sortBy === "reps"
+                          ? getRepsTitle(entry.total_completed)
+                          : getRankTitle(entry.current_streak)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Flame className="h-4 w-4 text-orange-500" />
-                          {entry.current_streak}
+                          {sortBy === "reps" ? (
+                            <>
+                              <Target className="h-4 w-4 text-blue-500" />
+                              {entry.total_completed}
+                            </>
+                          ) : (
+                            <>
+                              <Flame className="h-4 w-4 text-orange-500" />
+                              {entry.current_streak}
+                            </>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {entry.total_completed}
                       </TableCell>
                       <TableCell className="text-right">
                         {debt > 0 ? (

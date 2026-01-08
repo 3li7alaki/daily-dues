@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
-import { useLeaderboard, useCommitments } from "@/lib/queries";
+import { Loader2, Flame, Target } from "lucide-react";
+import { useLeaderboard, useCommitments, useCurrentUser } from "@/lib/queries";
 import { LeaderboardTable } from "@/components/leaderboard-table";
 import {
   Select,
@@ -11,16 +11,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useRealm } from "@/contexts/realm-context";
 
 export default function LeaderboardPage() {
   const [selectedCommitmentId, setSelectedCommitmentId] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"streak" | "reps">("streak");
   const { currentRealm } = useRealm();
+  const { data: currentUser } = useCurrentUser();
 
   const { data: commitments = [], isLoading: loadingCommitments } = useCommitments();
   const { data: entries = [], isLoading: loadingLeaderboard } = useLeaderboard(
-    selectedCommitmentId || undefined
+    selectedCommitmentId || undefined,
+    sortBy
   );
+
+  const isAdmin = currentUser?.role === "admin";
 
   // Filter commitments by current realm
   const realmCommitments = currentRealm
@@ -46,23 +52,43 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {realmCommitments.length > 0 && (
-          <Select
-            value={selectedCommitmentId}
-            onValueChange={setSelectedCommitmentId}
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Sort Toggle */}
+          <ToggleGroup
+            type="single"
+            value={sortBy}
+            onValueChange={(value) => value && setSortBy(value as "streak" | "reps")}
+            className="justify-start"
           >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Select commitment" />
-            </SelectTrigger>
-            <SelectContent>
-              {realmCommitments.map((commitment) => (
-                <SelectItem key={commitment.id} value={commitment.id}>
-                  {commitment.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+            <ToggleGroupItem value="streak" aria-label="Sort by streak" className="gap-1.5">
+              <Flame className="h-4 w-4" />
+              Streak
+            </ToggleGroupItem>
+            <ToggleGroupItem value="reps" aria-label="Sort by total completed" className="gap-1.5">
+              <Target className="h-4 w-4" />
+              Total
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          {/* Commitment Selector */}
+          {realmCommitments.length > 0 && (
+            <Select
+              value={selectedCommitmentId}
+              onValueChange={setSelectedCommitmentId}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select commitment" />
+              </SelectTrigger>
+              <SelectContent>
+                {realmCommitments.map((commitment) => (
+                  <SelectItem key={commitment.id} value={commitment.id}>
+                    {commitment.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -70,7 +96,7 @@ export default function LeaderboardPage() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <LeaderboardTable entries={entries} commitment={selectedCommitment} />
+        <LeaderboardTable entries={entries} commitment={selectedCommitment} isAdmin={isAdmin} sortBy={sortBy} />
       )}
     </div>
   );
