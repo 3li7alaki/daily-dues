@@ -3,7 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Main storage bucket name - set via env or defaults to "public"
  */
-export const STORAGE_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "public";
+export const STORAGE_BUCKET = process.env.NEXT_PUBLIC_STORAGE_BUCKET || "storage";
 
 /**
  * Storage folders within the bucket
