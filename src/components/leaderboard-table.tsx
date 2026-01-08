@@ -106,15 +106,23 @@ export function LeaderboardTable({
       day: "numeric",
     });
 
-    let text = `🏆 *${commitment?.name || "Commitment"} Leaderboard*\n`;
+    const sortLabel = sortBy === "reps" ? `by Total ${unit}` : "by Streak";
+    let text = `🏆 *${commitment?.name || "Commitment"} Leaderboard* (${sortLabel})\n`;
     text += `📅 ${date}\n\n`;
 
     entries.slice(0, 10).forEach((entry, index) => {
       const rank = index + 1;
       const emoji = getRankEmoji(rank);
-      const title = getRankTitle(entry.current_streak);
-      text += `${emoji} *${entry.user.name}*\n`;
-      text += `   🔥 ${entry.current_streak} day streak • ${title}\n\n`;
+
+      if (sortBy === "reps") {
+        const title = getRepsTitle(entry.total_completed);
+        text += `${emoji} *${entry.user.name}*\n`;
+        text += `   🎯 ${entry.total_completed} ${unit} • ${title}\n\n`;
+      } else {
+        const title = getRankTitle(entry.current_streak);
+        text += `${emoji} *${entry.user.name}*\n`;
+        text += `   🔥 ${entry.current_streak} day streak • ${title}\n\n`;
+      }
     });
 
     text += `\n💪 Keep pushing! Join the grind.`;
@@ -147,9 +155,11 @@ export function LeaderboardTable({
         body: JSON.stringify({
           commitmentName: commitment.name,
           unit: commitment.unit,
+          sortBy,
           entries: entries.slice(0, 10).map((entry) => ({
             userName: entry.user.name,
             currentStreak: entry.current_streak,
+            totalCompleted: entry.total_completed,
             pendingCarryOver: entry.pending_carry_over || 0,
           })),
         }),

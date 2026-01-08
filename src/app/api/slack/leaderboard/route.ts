@@ -4,12 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 interface LeaderboardEntryPayload {
   userName: string;
   currentStreak: number;
+  totalCompleted: number;
   pendingCarryOver: number;
 }
 
 interface SlackLeaderboardRequest {
   commitmentName: string;
   unit: string;
+  sortBy?: "streak" | "reps";
   entries: LeaderboardEntryPayload[];
 }
 
@@ -36,6 +38,16 @@ function getRankTitle(streak: number): string {
   return "Novice";
 }
 
+function getRepsTitle(reps: number): string {
+  if (reps >= 10000) return "Legend";
+  if (reps >= 5000) return "Elite";
+  if (reps >= 1000) return "Pro";
+  if (reps >= 500) return "Dedicated";
+  if (reps >= 100) return "Active";
+  if (reps >= 50) return "Rising";
+  return "Starter";
+}
+
 function buildSlackBlocks(data: SlackLeaderboardRequest) {
   const date = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -43,6 +55,9 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
     month: "long",
     day: "numeric",
   });
+
+  const isTotalMode = data.sortBy === "reps";
+  const sortLabel = isTotalMode ? `by Total ${data.unit}` : "by Streak";
 
   const blocks: object[] = [
     {
@@ -58,7 +73,7 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
       elements: [
         {
           type: "mrkdwn",
-          text: `:calendar: ${date}`,
+          text: `:calendar: ${date} • ${sortLabel}`,
         },
       ],
     },
@@ -74,12 +89,18 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
       .map((entry, index) => {
         const rank = index + 1;
         const emoji = getRankEmoji(rank);
-        const title = getRankTitle(entry.currentStreak);
-        const debtText =
-          entry.pendingCarryOver > 0
-            ? ` | :warning: ${entry.pendingCarryOver} ${data.unit} debt`
-            : "";
-        return `${emoji} *${entry.userName}*\n      :fire: ${entry.currentStreak} day streak • _${title}_${debtText}`;
+
+        if (isTotalMode) {
+          const title = getRepsTitle(entry.totalCompleted);
+          return `${emoji} *${entry.userName}*\n      :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
+        } else {
+          const title = getRankTitle(entry.currentStreak);
+          const debtText =
+            entry.pendingCarryOver > 0
+              ? ` | :warning: ${entry.pendingCarryOver} ${data.unit} debt`
+              : "";
+          return `${emoji} *${entry.userName}*\n      :fire: ${entry.currentStreak} day streak • _${title}_${debtText}`;
+        }
       })
       .join("\n\n");
 
@@ -102,12 +123,18 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
     const restText = rest
       .map((entry, index) => {
         const rank = index + 4;
-        const title = getRankTitle(entry.currentStreak);
-        const debtText =
-          entry.pendingCarryOver > 0
-            ? ` | ${entry.pendingCarryOver} debt`
-            : "";
-        return `${rank}. *${entry.userName}* — :fire: ${entry.currentStreak} days • _${title}_${debtText}`;
+
+        if (isTotalMode) {
+          const title = getRepsTitle(entry.totalCompleted);
+          return `${rank}. *${entry.userName}* — :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
+        } else {
+          const title = getRankTitle(entry.currentStreak);
+          const debtText =
+            entry.pendingCarryOver > 0
+              ? ` | ${entry.pendingCarryOver} debt`
+              : "";
+          return `${rank}. *${entry.userName}* — :fire: ${entry.currentStreak} days • _${title}_${debtText}`;
+        }
       })
       .join("\n");
 
