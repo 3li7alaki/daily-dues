@@ -207,10 +207,14 @@ export function usePendingApprovals(realmId?: string) {
   });
 }
 
+// Today's status for leaderboard entries
+export type TodayStatus = "not_due" | "not_logged" | "pending" | "approved";
+
 // Leaderboard Entry - user_commitments row with nested user and commitment
 export interface LeaderboardEntry extends UserCommitment {
   user: Profile;
   commitment: Commitment;
+  todayStatus: TodayStatus;
 }
 
 // Leaderboard - per commitment with sorting options
@@ -226,7 +230,7 @@ export function useLeaderboard(commitmentId?: string, sortBy: "streak" | "reps" 
 
       if (error) throw error;
 
-      let entries = data as LeaderboardEntry[];
+      let entries = data as Omit<LeaderboardEntry, "todayStatus">[];
 
       // Filter by commitment if specified
       if (commitmentId) {
@@ -236,29 +240,52 @@ export function useLeaderboard(commitmentId?: string, sortBy: "streak" | "reps" 
       // Only include entries where user has role 'user' (not admin)
       entries = entries.filter((e) => e.user.role === "user");
 
+      // Get today's info for status calculation
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const todayDayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+
+      // Fetch all of today's logs (both pending and approved)
+      const { data: todayLogs } = await supabase
+        .from("daily_logs")
+        .select("user_id, commitment_id, status, reviewed_at")
+        .eq("date", todayStr);
+
+      // Create maps for today's log status and completion time
+      const logStatusMap = new Map<string, "pending" | "approved">();
+      const completionTimeMap = new Map<string, string>();
+      todayLogs?.forEach((log) => {
+        const key = `${log.user_id}-${log.commitment_id}`;
+        if (log.status === "approved") {
+          logStatusMap.set(key, "approved");
+          completionTimeMap.set(key, log.reviewed_at || "");
+        } else if (log.status === "pending" && !logStatusMap.has(key)) {
+          logStatusMap.set(key, "pending");
+        }
+      });
+
+      // Compute todayStatus for each entry
+      const entriesWithStatus: LeaderboardEntry[] = entries.map((entry) => {
+        const key = `${entry.user_id}-${entry.commitment_id}`;
+        const isCommitmentDay = entry.commitment.active_days.includes(todayDayOfWeek);
+
+        let todayStatus: TodayStatus;
+        if (!isCommitmentDay) {
+          todayStatus = "not_due";
+        } else {
+          todayStatus = logStatusMap.get(key) || "not_logged";
+        }
+
+        return { ...entry, todayStatus };
+      });
+
       // Sort based on sortBy parameter
       if (sortBy === "reps") {
         // Sort by total_completed descending
-        entries.sort((a, b) => b.total_completed - a.total_completed);
+        entriesWithStatus.sort((a, b) => b.total_completed - a.total_completed);
       } else {
-        // Default: sort by streak
-        // Get today's logs to sort by earliest completion when scores are tied
-        const today = new Date().toISOString().split("T")[0];
-        const { data: todayLogs } = await supabase
-          .from("daily_logs")
-          .select("user_id, commitment_id, reviewed_at")
-          .eq("date", today)
-          .eq("status", "approved");
-
-        // Create a map of user+commitment to reviewed_at time
-        const completionTimeMap = new Map<string, string>();
-        todayLogs?.forEach((log) => {
-          const key = `${log.user_id}-${log.commitment_id}`;
-          completionTimeMap.set(key, log.reviewed_at || "");
-        });
-
-        // Sort by current_streak desc, then by earliest completion time
-        entries.sort((a, b) => {
+        // Default: sort by streak, then by earliest completion time
+        entriesWithStatus.sort((a, b) => {
           // Primary sort: current_streak descending
           if (b.current_streak !== a.current_streak) {
             return b.current_streak - a.current_streak;
@@ -270,7 +297,7 @@ export function useLeaderboard(commitmentId?: string, sortBy: "streak" | "reps" 
         });
       }
 
-      return entries;
+      return entriesWithStatus;
     },
     enabled: true,
   });

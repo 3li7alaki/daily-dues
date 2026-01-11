@@ -12,6 +12,9 @@ import {
   AlertTriangle,
   Loader2,
   Target,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
@@ -31,8 +34,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { LeaderboardEntry } from "@/lib/queries";
+import type { LeaderboardEntry, TodayStatus } from "@/lib/queries";
 import type { Commitment } from "@/types/database";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface LeaderboardTableProps {
   entries: LeaderboardEntry[];
@@ -85,6 +94,43 @@ function getRepsTitle(reps: number): string {
   if (reps >= 100) return "Active";
   if (reps >= 50) return "Rising";
   return "Starter";
+}
+
+function TodayStatusIndicator({ status }: { status: TodayStatus }) {
+  if (status === "not_due") return null;
+
+  const config = {
+    approved: {
+      icon: CheckCircle2,
+      className: "text-green-500",
+      tooltip: "Done today",
+    },
+    pending: {
+      icon: Clock,
+      className: "text-yellow-500",
+      tooltip: "Pending approval",
+    },
+    not_logged: {
+      icon: XCircle,
+      className: "text-red-500",
+      tooltip: "Not done today",
+    },
+  }[status];
+
+  const Icon = config.icon;
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Icon className={`h-4 w-4 ${config.className}`} />
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{config.tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function LeaderboardTable({
@@ -281,7 +327,10 @@ export function LeaderboardTable({
                       fallbackClassName="text-xl"
                     />
                   </div>
-                  <CardTitle className="text-lg">{entry.user.name}</CardTitle>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <CardTitle className="text-lg">{entry.user.name}</CardTitle>
+                    <TodayStatusIndicator status={entry.todayStatus} />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {sortBy === "reps"
                       ? getRepsTitle(entry.total_completed)
@@ -356,6 +405,7 @@ export function LeaderboardTable({
                             className="h-8 w-8"
                           />
                           {entry.user.name}
+                          <TodayStatusIndicator status={entry.todayStatus} />
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
