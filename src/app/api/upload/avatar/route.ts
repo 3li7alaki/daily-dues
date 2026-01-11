@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import {
   uploadAvatar,
   deleteAvatar,
@@ -48,8 +48,11 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
+    // Use admin client for storage operations to bypass RLS
+    const adminClient = createAdminClient();
+
     // Upload new avatar
-    const result = await uploadAvatar(supabase, {
+    const result = await uploadAvatar(adminClient, {
       userId: user.id,
       file,
     });
@@ -76,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     // Delete old avatar if it exists and is from our storage
     if (profile?.avatar_url && profile.avatar_url.includes("/storage/")) {
-      await deleteAvatar(supabase, profile.avatar_url);
+      await deleteAvatar(adminClient, profile.avatar_url);
     }
 
     return NextResponse.json({
