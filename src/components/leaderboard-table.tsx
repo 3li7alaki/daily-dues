@@ -159,14 +159,18 @@ export function LeaderboardTable({
     entries.slice(0, 10).forEach((entry, index) => {
       const rank = index + 1;
       const emoji = getRankEmoji(rank);
+      const todayEmoji = entry.todayStatus === "approved" ? "✅"
+        : entry.todayStatus === "pending" ? "⏳"
+        : entry.todayStatus === "not_logged" ? "❌"
+        : "";
 
       if (sortBy === "reps") {
         const title = getRepsTitle(entry.total_completed);
-        text += `${emoji} *${entry.user.name}*\n`;
+        text += `${emoji} *${entry.user.name}* ${todayEmoji}\n`;
         text += `   🎯 ${entry.total_completed} ${unit} • ${title}\n\n`;
       } else {
         const title = getRankTitle(entry.current_streak);
-        text += `${emoji} *${entry.user.name}*\n`;
+        text += `${emoji} *${entry.user.name}* ${todayEmoji}\n`;
         text += `   🔥 ${entry.current_streak} day streak • ${title}\n\n`;
       }
     });
@@ -207,6 +211,7 @@ export function LeaderboardTable({
             currentStreak: entry.current_streak,
             totalCompleted: entry.total_completed,
             pendingCarryOver: entry.pending_carry_over || 0,
+            todayStatus: entry.todayStatus,
           })),
         }),
       });

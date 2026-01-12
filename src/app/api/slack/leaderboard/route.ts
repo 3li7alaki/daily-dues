@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+type TodayStatus = "not_due" | "not_logged" | "pending" | "approved";
+
 interface LeaderboardEntryPayload {
   userName: string;
   currentStreak: number;
   totalCompleted: number;
   pendingCarryOver: number;
+  todayStatus?: TodayStatus;
+}
+
+function getTodayStatusEmoji(status?: TodayStatus): string {
+  switch (status) {
+    case "approved":
+      return ":white_check_mark:";
+    case "pending":
+      return ":hourglass_flowing_sand:";
+    case "not_logged":
+      return ":x:";
+    default:
+      return "";
+  }
 }
 
 interface SlackLeaderboardRequest {
@@ -89,17 +105,18 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
       .map((entry, index) => {
         const rank = index + 1;
         const emoji = getRankEmoji(rank);
+        const statusEmoji = getTodayStatusEmoji(entry.todayStatus);
 
         if (isTotalMode) {
           const title = getRepsTitle(entry.totalCompleted);
-          return `${emoji} *${entry.userName}*\n      :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
+          return `${emoji} *${entry.userName}* ${statusEmoji}\n      :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
         } else {
           const title = getRankTitle(entry.currentStreak);
           const debtText =
             entry.pendingCarryOver > 0
               ? ` | :warning: ${entry.pendingCarryOver} ${data.unit} debt`
               : "";
-          return `${emoji} *${entry.userName}*\n      :fire: ${entry.currentStreak} day streak • _${title}_${debtText}`;
+          return `${emoji} *${entry.userName}* ${statusEmoji}\n      :fire: ${entry.currentStreak} day streak • _${title}_${debtText}`;
         }
       })
       .join("\n\n");
@@ -123,17 +140,18 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
     const restText = rest
       .map((entry, index) => {
         const rank = index + 4;
+        const statusEmoji = getTodayStatusEmoji(entry.todayStatus);
 
         if (isTotalMode) {
           const title = getRepsTitle(entry.totalCompleted);
-          return `${rank}. *${entry.userName}* — :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
+          return `${rank}. *${entry.userName}* ${statusEmoji} — :dart: ${entry.totalCompleted} ${data.unit} • _${title}_`;
         } else {
           const title = getRankTitle(entry.currentStreak);
           const debtText =
             entry.pendingCarryOver > 0
               ? ` | ${entry.pendingCarryOver} debt`
               : "";
-          return `${rank}. *${entry.userName}* — :fire: ${entry.currentStreak} days • _${title}_${debtText}`;
+          return `${rank}. *${entry.userName}* ${statusEmoji} — :fire: ${entry.currentStreak} days • _${title}_${debtText}`;
         }
       })
       .join("\n");

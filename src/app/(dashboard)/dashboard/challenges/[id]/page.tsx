@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -19,6 +20,7 @@ import {
   useChallengeLeaderboard,
   useSubmitVote,
   useJoinChallenge,
+  type ChallengeLeaderboardEntry,
 } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +62,9 @@ export default function ChallengeDetailPage() {
   const [selectedUserName, setSelectedUserName] = useState<string>("");
   const [voteAmount, setVoteAmount] = useState<number>(0);
   const [currentVote, setCurrentVote] = useState<number>(0);
+
+  const [viewVotesDialogOpen, setViewVotesDialogOpen] = useState(false);
+  const [viewVotesEntry, setViewVotesEntry] = useState<ChallengeLeaderboardEntry | null>(null);
 
   const { data, isLoading, error } = useChallengeLeaderboard(challengeId);
   const submitVoteMutation = useSubmitVote();
@@ -106,6 +111,16 @@ export default function ChallengeDetailPage() {
     setCurrentVote(existingVote);
     setVoteAmount(existingVote || 0);
     setVoteDialogOpen(true);
+  };
+
+  const openViewVotesDialog = (entry: typeof entries[0]) => {
+    setViewVotesEntry(entry);
+    setViewVotesDialogOpen(true);
+  };
+
+  const getVoterName = (voterId: string): string => {
+    const voter = entries.find((e) => e.user_id === voterId);
+    return voter?.user_name || "Unknown";
   };
 
   const handleVote = async () => {
@@ -300,6 +315,16 @@ export default function ChallengeDetailPage() {
                               Needs {2 - entry.vote_count} more
                             </Badge>
                           )}
+                          {entry.vote_count > 0 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 ml-1"
+                              onClick={() => openViewVotesDialog(entry)}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -390,6 +415,57 @@ export default function ChallengeDetailPage() {
               {currentVote > 0 ? "Update Vote" : "Submit Vote"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Votes Dialog */}
+      <Dialog open={viewVotesDialogOpen} onOpenChange={setViewVotesDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Votes for {viewVotesEntry?.user_name}</DialogTitle>
+            <DialogDescription>
+              {viewVotesEntry?.vote_count} vote{viewVotesEntry?.vote_count !== 1 ? "s" : ""} received
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-3">
+            {viewVotesEntry && Object.entries(viewVotesEntry.votes).length > 0 ? (
+              Object.entries(viewVotesEntry.votes).map(([voterId, voteValue]) => {
+                const voterEntry = entries.find((e) => e.user_id === voterId);
+                return (
+                  <div
+                    key={voterId}
+                    className="flex items-center justify-between p-2 rounded-md bg-muted/50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <UserAvatar
+                        name={getVoterName(voterId)}
+                        avatarUrl={voterEntry?.user_avatar_url}
+                        className="h-8 w-8"
+                      />
+                      <span className="font-medium">{getVoterName(voterId)}</span>
+                    </div>
+                    <Badge variant="secondary" className="font-mono">
+                      {voteValue} {commitment_unit}
+                    </Badge>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-center text-muted-foreground">No votes yet</p>
+            )}
+          </div>
+
+          {viewVotesEntry && viewVotesEntry.agreed_reps !== null && (
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Agreed Result (Mode)</span>
+                <Badge variant="default" className="font-mono">
+                  {viewVotesEntry.agreed_reps} {commitment_unit}
+                </Badge>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

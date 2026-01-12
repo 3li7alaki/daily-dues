@@ -28,6 +28,7 @@ import {
   sendChallengeResults as sendChallengeResultsAction,
   type ChallengeWithDetails,
   type ChallengeLeaderboardData,
+  type ChallengeLeaderboardEntry,
   type CreateChallengeInput,
   type SubmitVoteInput,
 } from "@/app/actions/challenges";
@@ -786,4 +787,4 @@ export function useSendChallengeResults() {
 }
 
 // Re-export types for convenience
-export type { ChallengeWithDetails, ChallengeLeaderboardData };
+export type { ChallengeWithDetails, ChallengeLeaderboardData, ChallengeLeaderboardEntry };
