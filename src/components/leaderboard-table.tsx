@@ -156,7 +156,7 @@ export function LeaderboardTable({
     let text = `🏆 *${commitment?.name || "Commitment"} Leaderboard* (${sortLabel})\n`;
     text += `📅 ${date}\n\n`;
 
-    entries.slice(0, 10).forEach((entry, index) => {
+    entries.forEach((entry, index) => {
       const rank = index + 1;
       const emoji = getRankEmoji(rank);
       const todayEmoji = entry.todayStatus === "approved" ? "✅"
@@ -206,7 +206,7 @@ export function LeaderboardTable({
           commitmentName: commitment.name,
           unit: commitment.unit,
           sortBy,
-          entries: entries.slice(0, 10).map((entry) => ({
+          entries: entries.map((entry) => ({
             userName: entry.user.name,
             currentStreak: entry.current_streak,
             totalCompleted: entry.total_completed,

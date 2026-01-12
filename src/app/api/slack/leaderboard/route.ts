@@ -131,7 +131,7 @@ function buildSlackBlocks(data: SlackLeaderboardRequest) {
   }
 
   // Rest of the leaderboard
-  const rest = data.entries.slice(3, 10);
+  const rest = data.entries.slice(3);
   if (rest.length > 0) {
     blocks.push({
       type: "divider",
