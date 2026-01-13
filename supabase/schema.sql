@@ -91,6 +91,7 @@ CREATE TABLE user_commitments (
     commitment_id UUID NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
     pending_carry_over INTEGER DEFAULT 0,
     total_completed INTEGER DEFAULT 0,
+    debt_repaid INTEGER DEFAULT 0, -- Tracks debt repayment separately to prevent gaming
     current_streak INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
     assigned_at TIMESTAMPTZ DEFAULT NOW(),

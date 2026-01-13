@@ -1,7 +1,10 @@
-import { Users, CheckCircle } from "lucide-react";
+"use client";
+
+import { Users, CheckCircle, Landmark } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { RealmAvatar } from "@/components/realm-avatar";
 import { Progress } from "@/components/ui/progress";
+import { useRealmDebtBank } from "@/lib/queries";
 import type { Realm } from "@/types/database";
 
 interface RealmStatsProps {
@@ -11,6 +14,7 @@ interface RealmStatsProps {
 }
 
 export function RealmStats({ realm, completedUsers, totalUsers }: RealmStatsProps) {
+  const { data: debtBank } = useRealmDebtBank(realm.id);
   const percentage = totalUsers > 0 ? Math.round((completedUsers / totalUsers) * 100) : 0;
 
   // Don't show progress bar if no users have commitments
@@ -68,6 +72,24 @@ export function RealmStats({ realm, completedUsers, totalUsers }: RealmStatsProp
             {percentage}% of team done
           </p>
         </div>
+        {debtBank && debtBank.total > 0 && (
+          <div className="mt-4 pt-4 border-t border-primary/10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Landmark className="h-4 w-4" />
+                <span>Realm Debt Bank</span>
+              </div>
+              <div className="text-right">
+                <span className="text-lg font-bold text-amber-600">
+                  {debtBank.total.toLocaleString()}
+                </span>
+                <span className="text-xs text-muted-foreground ml-1">
+                  {debtBank.unit} repaid
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -60,6 +60,7 @@ export const queryKeys = {
   holidays: (realmId?: string) => ["holidays", realmId] as const,
   challenges: (realmId?: string) => ["challenges", realmId] as const,
   challengeLeaderboard: (challengeId: string) => ["challengeLeaderboard", challengeId] as const,
+  realmDebtBank: (realmId?: string) => ["realmDebtBank", realmId] as const,
 };
 
 // ============ Queries ============
@@ -354,6 +355,48 @@ export function useTodayIsHoliday(realmId?: string, userId?: string, date?: stri
       return applicableHoliday || null;
     },
     enabled: !!realmId && !!userId && !!date,
+  });
+}
+
+// Realm Debt Bank - total debt repaid across all users in a realm
+export function useRealmDebtBank(realmId?: string) {
+  const supabase = createClient();
+  return useQuery({
+    queryKey: queryKeys.realmDebtBank(realmId),
+    queryFn: async () => {
+      if (!realmId) return { total: 0, unit: "" };
+
+      // First get all commitments in this realm to get the unit
+      const { data: commitments } = await supabase
+        .from("commitments")
+        .select("id, unit")
+        .eq("realm_id", realmId)
+        .limit(1);
+
+      const unit = commitments?.[0]?.unit || "reps";
+      const commitmentIds = commitments?.map(c => c.id) || [];
+
+      if (commitmentIds.length === 0) {
+        return { total: 0, unit };
+      }
+
+      // Get all user_commitments for commitments in this realm
+      const { data, error } = await supabase
+        .from("user_commitments")
+        .select("debt_repaid")
+        .in("commitment_id", commitmentIds);
+
+      if (error) throw error;
+
+      // Sum up all debt_repaid values
+      const total = (data || []).reduce(
+        (sum, uc) => sum + ((uc.debt_repaid as number) || 0),
+        0
+      );
+
+      return { total, unit };
+    },
+    enabled: !!realmId,
   });
 }
 

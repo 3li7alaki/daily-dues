@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Flame, Target } from "lucide-react";
-import { useLeaderboard, useCommitments, useCurrentUser } from "@/lib/queries";
+import { Loader2, Flame, Target, Landmark } from "lucide-react";
+import { useLeaderboard, useCommitments, useCurrentUser, useRealmDebtBank } from "@/lib/queries";
 import { LeaderboardTable } from "@/components/leaderboard-table";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ export default function LeaderboardPage() {
     selectedCommitmentId || undefined,
     sortBy
   );
+  const { data: debtBank } = useRealmDebtBank(currentRealm?.id);
 
   const isAdmin = currentUser?.role === "admin";
 
@@ -90,6 +92,35 @@ export default function LeaderboardPage() {
           )}
         </div>
       </div>
+
+      {/* Realm Debt Bank */}
+      {debtBank && debtBank.total > 0 && (
+        <Card className="bg-gradient-to-r from-amber-500/5 to-amber-500/10 border-amber-500/20">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 rounded-full">
+                  <Landmark className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Realm Debt Bank</p>
+                  <p className="text-xs text-muted-foreground">
+                    Total debt repaid by all members
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-amber-600">
+                  {debtBank.total.toLocaleString()}
+                </span>
+                <span className="text-sm text-muted-foreground ml-1">
+                  {debtBank.unit}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">

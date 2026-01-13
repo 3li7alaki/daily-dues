@@ -223,13 +223,22 @@ export async function approveLog(input: ApproveLogInput): Promise<ApproveLogResu
     const completed = log.completed_amount;
     const missed = Math.max(0, totalDue - completed);
 
+    // Split completed amount: regular portion goes to total_completed, debt portion goes to debt_repaid
+    // This prevents gaming the system by intentionally breaking streaks to inflate totals
+    const regularPortion = Math.min(completed, log.target_amount);
+    const debtPortion = Math.min(
+      Math.max(0, completed - log.target_amount),
+      log.carry_over_from_previous
+    );
+
     if (completed >= totalDue) {
       // Full completion - increment streak
       const newStreak = userCommitment.current_streak + 1;
       const { error: streakError } = await adminClient
         .from("user_commitments")
         .update({
-          total_completed: userCommitment.total_completed + completed,
+          total_completed: userCommitment.total_completed + regularPortion,
+          debt_repaid: (userCommitment.debt_repaid || 0) + debtPortion,
           current_streak: newStreak,
           best_streak: Math.max(userCommitment.best_streak, newStreak),
           pending_carry_over: 0,
@@ -246,7 +255,8 @@ export async function approveLog(input: ApproveLogInput): Promise<ApproveLogResu
       const { error: partialError } = await adminClient
         .from("user_commitments")
         .update({
-          total_completed: userCommitment.total_completed + completed,
+          total_completed: userCommitment.total_completed + regularPortion,
+          debt_repaid: (userCommitment.debt_repaid || 0) + debtPortion,
           current_streak: 0,
           pending_carry_over: newCarryOver,
         })

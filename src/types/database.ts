@@ -177,6 +177,7 @@ export interface Database {
           commitment_id: string;
           pending_carry_over: number;
           total_completed: number;
+          debt_repaid: number;
           current_streak: number;
           best_streak: number;
           assigned_at: string;
@@ -187,6 +188,7 @@ export interface Database {
           commitment_id: string;
           pending_carry_over?: number;
           total_completed?: number;
+          debt_repaid?: number;
           current_streak?: number;
           best_streak?: number;
           assigned_at?: string;
@@ -197,6 +199,7 @@ export interface Database {
           commitment_id?: string;
           pending_carry_over?: number;
           total_completed?: number;
+          debt_repaid?: number;
           current_streak?: number;
           best_streak?: number;
           assigned_at?: string;
